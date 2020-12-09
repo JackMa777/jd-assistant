@@ -100,6 +100,7 @@ class Assistant(object):
         try:
             resp = self.sess.get(url=url, params=payload, allow_redirects=False)
             if resp.status_code == requests.codes.OK:
+                # TODO 重写登录判断逻辑
                 return True
         except Exception as e:
             logger.error(e)
@@ -823,7 +824,7 @@ class Assistant(object):
         i = 0
         while i < 3:
             try:
-                resp = self.sess.get(url=url, params=payload, timeout=(0.1, 0.08))
+                resp = self.sess.get(url=url, params=payload, timeout=(0.1, 0.04))
                 if not response_status(resp):
                     logger.error('获取订单结算页信息失败')
                     return
@@ -831,12 +832,12 @@ class Assistant(object):
                 soup = BeautifulSoup(resp.text, "html.parser")
                 self.risk_control = get_tag_value(soup.select('input#riskControl'), 'value')
 
-                order_detail = {
-                    'address': soup.find('span', id='sendAddr').text[5:],  # remove '寄送至： ' from the begin
-                    'receiver': soup.find('span', id='sendMobile').text[4:],  # remove '收件人:' from the begin
-                    'total_price': soup.find('span', id='sumPayPriceId').text[1:],  # remove '￥' from the begin
-                    'items': []
-                }
+                # order_detail = {
+                #     'address': soup.find('span', id='sendAddr').text[5:],  # remove '寄送至： ' from the begin
+                #     'receiver': soup.find('span', id='sendMobile').text[4:],  # remove '收件人:' from the begin
+                #     'total_price': soup.find('span', id='sumPayPriceId').text[1:],  # remove '￥' from the begin
+                #     'items': []
+                # }
                 # TODO: 这里可能会产生解析问题，待修复
                 # for item in soup.select('div.goods-list div.goods-items'):
                 #     div_tag = item.select('div.p-price')[0]
@@ -847,13 +848,14 @@ class Assistant(object):
                 #         'state': get_tag_value(div_tag.select('span.p-state'))  # in stock or out of stock
                 #     })
 
-                logger.info("下单信息：%s", order_detail)
-                return order_detail
+                # logger.info("下单信息：%s", order_detail)
+                # return order_detail
+                return
             except requests.exceptions.ConnectTimeout as e:
                 i += 1
                 logger.error('订单结算页面数据连接超时，开始第 %s 次重试', i)
             except requests.exceptions.ReadTimeout as e:
-                logger.error('订单结算页面数据获取超时（可以忽略），报错信息：%s', e)
+                logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
                 break
             except Exception as e:
                 logger.error('订单结算页面数据解析异常（可以忽略），报错信息：%s', e)
@@ -1414,6 +1416,9 @@ class Assistant(object):
 
         # 开抢前清空购物车
         self.clear_cart()
+
+
+        logger.info('准备抢购商品id为：%s', sku_id)
 
         t = Timer(buy_time=buy_time, sleep_interval=sleep_interval, fast_sleep_interval=fast_sleep_interval)
         t.start()
