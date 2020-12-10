@@ -824,7 +824,7 @@ class Assistant(object):
         i = 0
         while i < 3:
             try:
-                resp = self.sess.get(url=url, params=payload, timeout=(0.1, 0.04))
+                resp = self.sess.get(url=url, params=payload, timeout=(0.1, 0.05))
                 if not response_status(resp):
                     logger.error('获取订单结算页信息失败')
                     return
