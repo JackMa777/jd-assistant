@@ -642,7 +642,7 @@ class Assistant(object):
             headers = {
                 'User-Agent': self.user_agent,
             }
-            timeout = (0.1, 0.025)
+            timeout = (0.2, 0.025)
         else:
             url = request_info['url']
             headers = request_info['headers']
@@ -829,7 +829,7 @@ class Assistant(object):
         if not request_info:
             url = 'http://trade.jd.com/shopping/order/getOrderInfo.action'
             # url = 'https://cart.jd.com/gotoOrder.action'
-            timeout = (0.1, 0.05)
+            timeout = (0.2, 0.05)
         else:
             url = request_info['url']
             timeout = request_info['timeout']
@@ -1522,13 +1522,13 @@ class Assistant(object):
             'headers': {
                 'User-Agent': self.user_agent
             },
-            'timeout': (0.1, 0.025)
+            'timeout': (0.2, 0.025)
         }
 
         # 初始化订单结算页请求信息
         self.request_info['get_checkout_page_request'] = {
             'url': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            'timeout': (0.1, 0.05)
+            'timeout': (0.2, 0.05)
         }
 
         # 初始化提交订单请求信息
