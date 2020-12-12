@@ -1,28 +1,19 @@
 # -*- coding:utf-8 -*-
-import time
 import json
-import win32api
-import ctypes, sys
-import requests
+import os
+import platform
+import time
 from datetime import datetime, timedelta
+
+import requests
 
 from log import logger
 
-
-def is_admin():
-    try:
-        # 获取当前用户的是否为管理员
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
 
 class Timer(object):
 
     def __init__(self, buy_time, sleep_interval=0.5, fast_sleep_interval=0.01):
 
-        if not is_admin():
-            # 重新运行这个程序使用管理员权限
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 1)
         # 同步京东服务器时间
         self.setSystemTime()
 
@@ -58,12 +49,15 @@ class Timer(object):
         js = json.loads(ret)
         t = float(js["serverTime"]) / 1000
         dt = datetime.fromtimestamp(t) + ((t1 - t0) / 2)
-        tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec, tm_wday, tm_yday, tm_isdst = time.gmtime(
-            time.mktime(dt.timetuple()))
-        msec = dt.microsecond / 1000
-        try:
-            win32api.SetSystemTime(tm_year, tm_mon, tm_wday, tm_mday, tm_hour, tm_min, tm_sec, int(msec))
-            logger.info('已同步京东服务器时间：%s' % dt)
-        except Exception as e:
-            logger.error('同步京东服务器时间失败：%s' % dt)
-            logger.error(e)
+
+        sys = platform.system()
+        if sys == "Windows":
+            win_utils = __import__('win_utils')
+            win_utils.setWinSystemTime(dt)
+        elif sys == "Linux":
+            try:
+                os.system(f'date -s "{dt.strftime("%Y-%m-%d %H:%M:%S.%f000")}"')
+                logger.info('已同步京东服务器时间：%s' % dt)
+            except Exception as e:
+                logger.error('同步京东服务器时间失败，请检查权限')
+                logger.error(e)
