@@ -3,7 +3,7 @@
 import logging
 import logging.handlers
 
-LOG_FILENAME = 'jd-assistant.log'
+LOG_FILENAME = '../jd-assistant.log'
 
 logger = logging.getLogger()
 

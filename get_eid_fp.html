@@ -9,17 +9,19 @@
 </html>
 
 <script src="https://gias.jd.com/js/td.js"></script>
+<script src="https://misc.360buyimg.com/user/purchase/2.0.0/js/cookieTrack_v4.js"></script>
+<!--<script src="https://payrisk.jd.com/js/td.js"></script>-->
 
 <script>
-    setTimeout(function () {
+    window.onload = function(){
+        document.getElementById('info').innerText = '请把下面的内容复制到配置文件 config.ini 中的对应位置';
         try {
             getJdEid(function (eid, fp, udfp) {
-                document.getElementById('info').innerText = '请把下面的内容复制到配置文件 config.ini 中的对应位置';
                 document.getElementById('eid').innerText = 'eid = ' + eid;
                 document.getElementById('fp').innerText = 'fp = ' + fp;
             });
         } catch (e) {
             document.getElementById('info').innerText = e;
         }
-    }, 1000);
+    }
 </script>

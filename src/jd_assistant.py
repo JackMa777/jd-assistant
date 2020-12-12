@@ -46,8 +46,6 @@ class Assistant(object):
         self.fp = global_config.get('config', 'fp')
         self.track_id = global_config.get('config', 'track_id')
         self.risk_control = global_config.get('config', 'risk_control')
-        if not self.eid or not self.fp or not self.track_id:
-            raise AsstException('请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
 
         self.timeout = float(global_config.get('config', 'timeout') or DEFAULT_TIMEOUT)
         self.send_message = global_config.getboolean('messenger', 'enable')
@@ -73,9 +71,9 @@ class Assistant(object):
 
     def _load_cookies(self):
         cookies_file = ''
-        for name in os.listdir('./cookies'):
+        for name in os.listdir('../cookies'):
             if name.endswith('.cookies'):
-                cookies_file = './cookies/{0}'.format(name)
+                cookies_file = '../cookies/{0}'.format(name)
                 break
         with open(cookies_file, 'rb') as f:
             local_cookies = pickle.load(f)
@@ -83,7 +81,7 @@ class Assistant(object):
         self.is_login = self._validate_cookies()
 
     def _save_cookies(self):
-        cookies_file = './cookies/{0}.cookies'.format(self.nick_name)
+        cookies_file = '../cookies/{0}.cookies'.format(self.nick_name)
         directory = os.path.dirname(cookies_file)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -100,7 +98,10 @@ class Assistant(object):
         #     'rid': str(int(time.time() * 1000)),
         # }
         try:
-            resp = self.sess.get(url=url, headers={'dnt': '1', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate', 'sec-fetch-site': 'none', 'upgrade-insecure-requests': '1', 'user-agent': self.user_agent}, allow_redirects=False)
+            resp = self.sess.get(url=url,
+                                 headers={'dnt': '1', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate',
+                                          'sec-fetch-site': 'none', 'upgrade-insecure-requests': '1',
+                                          'user-agent': self.user_agent}, allow_redirects=False)
             if resp.status_code == requests.codes.OK:
                 return True
         except Exception as e:
@@ -269,7 +270,7 @@ class Assistant(object):
             logger.info('获取二维码失败')
             return False
 
-        QRCode_file = 'QRcode.png'
+        QRCode_file = '../QRcode.png'
         save_image(resp, QRCode_file)
         logger.info('二维码获取成功，请打开京东APP扫描')
         open_image(QRCode_file)
@@ -325,33 +326,35 @@ class Assistant(object):
         """
         if self.is_login:
             logger.info('登录成功')
-            return
-
-        self._get_login_page()
-
-        # download QR code
-        if not self._get_QRcode():
-            raise AsstException('二维码下载失败')
-
-        # get QR code ticket
-        ticket = None
-        retry_times = 85
-        for _ in range(retry_times):
-            ticket = self._get_QRcode_ticket()
-            if ticket:
-                break
-            time.sleep(2)
         else:
-            raise AsstException('二维码过期，请重新获取扫描')
+            self._get_login_page()
 
-        # validate QR code ticket
-        if not self._validate_QRcode_ticket(ticket):
-            raise AsstException('二维码信息校验失败')
+            # download QR code
+            if not self._get_QRcode():
+                raise AsstException('二维码下载失败')
 
-        logger.info('二维码登录成功')
-        self.is_login = True
-        self.nick_name = self.get_user_info()
-        self._save_cookies()
+            # get QR code ticket
+            ticket = None
+            retry_times = 85
+            for _ in range(retry_times):
+                ticket = self._get_QRcode_ticket()
+                if ticket:
+                    break
+                time.sleep(2)
+            else:
+                raise AsstException('二维码过期，请重新获取扫描')
+
+            # validate QR code ticket
+            if not self._validate_QRcode_ticket(ticket):
+                raise AsstException('二维码信息校验失败')
+
+            logger.info('二维码登录成功')
+            self.is_login = True
+            self.nick_name = self.get_user_info()
+            self._save_cookies()
+
+        # 初始化下单必须的参数
+        self.init_order_request_info()
 
     def _get_reserve_url(self, sku_id):
         url = 'https://yushou.jd.com/youshouinfo.action'
@@ -1176,7 +1179,7 @@ class Assistant(object):
                 logger.info("抢购链接获取成功: %s", seckill_url)
                 return seckill_url
             else:
-                retry_count+=1
+                retry_count += 1
                 logger.info("第%s次获取抢购链接失败，%s不是抢购商品或抢购页面暂未刷新，%s秒后重试", retry_count, sku_id, retry_interval)
                 time.sleep(retry_interval)
 
@@ -1325,7 +1328,7 @@ class Assistant(object):
                 resp_json = parse_json(resp.text)
             except Exception as e:
                 logger.error('秒杀请求出错：%s', str(e))
-                retry_count+=1
+                retry_count += 1
                 time.sleep(retry_interval)
             # 返回信息
             # 抢购失败：
@@ -1343,7 +1346,7 @@ class Assistant(object):
                 return True
             else:
                 logger.info('抢购失败，返回信息: %s', resp_json)
-                retry_count+=1
+                retry_count += 1
                 time.sleep(retry_interval)
         return False
 
@@ -1382,7 +1385,8 @@ class Assistant(object):
             return False
 
     @deprecated
-    def exec_seckill_by_time(self, sku_ids, buy_time=None, sku_buy_time=None, retry=4, interval=4, num=1, fast_mode=True, sleep_interval=0.5, fast_sleep_interval=0.01):
+    def exec_seckill_by_time(self, sku_ids, buy_time=None, sku_buy_time=None, retry=4, interval=4, num=1,
+                             fast_mode=True, sleep_interval=0.5, fast_sleep_interval=0.01):
         """定时抢购
         :param sku_ids: 商品id，多个商品id用逗号进行分割，如"123,456,789"
         :param buy_time: 下单时间，例如：'2018-09-28 22:45:50.000'
@@ -1415,7 +1419,8 @@ class Assistant(object):
             self.exec_seckill(sku_id, server_buy_time, retry, interval, num, fast_mode)
 
     @check_login
-    def exec_reserve_seckill_by_time(self, sku_id, buy_time=None, retry=4, interval=4, num=1, is_pass_cart=False, sleep_interval=0.5, fast_sleep_interval=0.01):
+    def exec_reserve_seckill_by_time(self, sku_id, buy_time=None, retry=4, interval=4, num=1, is_pass_cart=False,
+                                     sleep_interval=0.5, fast_sleep_interval=0.01):
         """定时抢购`预约抢购商品`
 
         一定要确保预约的商品在购物车中才能使用这种方式！！！否则只能用其他方式
@@ -1444,7 +1449,6 @@ class Assistant(object):
 
         # 提前初始化请求信息
         self.init_request_info()
-
 
         logger.info('准备抢购商品id为：%s', sku_id)
 
@@ -1560,3 +1564,30 @@ class Assistant(object):
                 'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action'
             }
         }
+
+    def init_order_request_info(self):
+        # 初始化下单必须参数：eid、fp、track_id、risk_control（默认为空）
+        # TODO
+        eid = 'a'
+        fp = ''
+        track_id = ''
+        risk_control = ''
+        headers = {
+            'dnt': '1',
+            'User-Agent': self.user_agent,
+            'referer': 'https://trade.jd.com/',
+        }
+        tdjs = ''
+        resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
+        if not resp.text:
+            tdjs = open('../js/td.js', 'r', encoding='utf8').read()
+        else:
+            tdjs = resp.text
+        # tdjs_data = execjs.eval(tdjs)
+
+        # self.eid = eid
+        # self.fp = fp
+        self.track_id = requests.utils.dict_from_cookiejar(self.sess.cookies)['TrackID']
+        # self.risk_control = risk_control
+        if not self.eid or not self.fp or not self.track_id:
+            raise AsstException('自动初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')

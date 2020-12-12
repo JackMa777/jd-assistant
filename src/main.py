@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
-import time
 from jd_assistant import Assistant
 
 if __name__ == '__main__':
