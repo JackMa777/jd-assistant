@@ -11,3 +11,4 @@ pywin32==300
 PyYAML==5.3.1
 requests==2.25.0
 pycurl==7.43.0.5
+Selenium==3.141.0

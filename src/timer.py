@@ -52,7 +52,7 @@ class Timer(object):
 
         sys = platform.system()
         if sys == "Windows":
-            win_utils = __import__('win_utils')
+            import win_utils
             win_utils.setWinSystemTime(dt)
         elif sys == "Linux":
             try:

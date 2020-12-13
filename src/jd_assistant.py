@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup
+from selenium import webdriver
 
 from config import global_config
 from exception import AsstException
@@ -1584,10 +1585,25 @@ class Assistant(object):
         else:
             tdjs = resp.text
         # tdjs_data = execjs.eval(tdjs)
+        cookies = self.sess.cookies
+
+        # 启动浏览器
+        # chrome_options = webdriver.ChromeOptions()
+        # chrome_options.add_argument('--headless')
+        # chrome_options.add_argument('--disable-gpu')
+        # client = webdriver.Chrome(chrome_options=chrome_options, executable_path='chromedriver.exe',
+        #                           service_log_path='--log-path=webdriver/chromedriver.log')
+        # client.add_cookie(cookies)
+        # # 如果没有把chromedriver加入到PATH中,就需要指明路径 executable_path='/home/chromedriver'
+        #
+        # client.get("https://www.aliyun.com/jiaocheng/124644.html")
+        # content = client.page_source
+        # print(content)
+        # client.quit()
 
         # self.eid = eid
         # self.fp = fp
-        self.track_id = requests.utils.dict_from_cookiejar(self.sess.cookies)['TrackID']
+        self.track_id = requests.utils.dict_from_cookiejar(cookies)['TrackID']
         # self.risk_control = risk_control
         if not self.eid or not self.fp or not self.track_id:
             raise AsstException('自动初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
