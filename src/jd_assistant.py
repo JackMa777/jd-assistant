@@ -7,10 +7,12 @@ import random
 import re
 import time
 from datetime import datetime, timedelta
+import sys
 
 import requests
 from bs4 import BeautifulSoup
-from selenium import webdriver
+import QtWebEngineUtil
+from PyQt5.QtWidgets import *
 
 from config import global_config
 from exception import AsstException
@@ -1588,6 +1590,14 @@ class Assistant(object):
         cookies = self.sess.cookies
 
         # 启动浏览器
+        # 创建应用
+        app = QApplication(sys.argv)
+        # 创建主窗口
+        window = QtWebEngineUtil.MainWindow()
+        # 显示窗口
+        window.show()
+        # 运行应用，并监听事件
+        app.exec_()
         # chrome_options = webdriver.ChromeOptions()
         # chrome_options.add_argument('--headless')
         # chrome_options.add_argument('--disable-gpu')
