@@ -1592,7 +1592,7 @@ class Assistant(object):
         br = QtWebEngineUtil.CustomBrowser()
         def dadaw(data):
             print(data)
-        br.open('http://www.baidu.com', '''
+        br.open('https://www.baidu.com', '''
                     function myFunction()
                     {
                         return document.body.scrollWidth;
