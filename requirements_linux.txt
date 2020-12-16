@@ -11,3 +11,4 @@ requests==2.25.0
 pycurl==7.43.0.5
 PyQt5==5.15.2
 PyQtWebEngine==5.15.2
+lxml==4.6.2

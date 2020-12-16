@@ -1,71 +1,136 @@
+import time
+from inspect import isfunction
+
+import lxml.html
 from PyQt5.QtCore import *
-from PyQt5.QtGui import *
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtWidgets import *
 
 
-class MainWindow(QMainWindow):
+class CustomBrowser(QWebEngineView):
     # noinspection PyUnresolvedReferences
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # 设置窗口标题
-        self.setWindowTitle('My Browser')
-        # 设置窗口大小900*600
-        self.resize(900, 600)
-        self.show()
+        self.app = QApplication([])
+        QWebEngineView.__init__(self)
+        self.html = ''
+        self.tree: lxml.html.etree._Element = None
 
-        # 设置浏览器
-        self.browser = QWebEngineView()
-        url = 'http://www.baidu.com'
-        # 指定打开界面的 URL
-        self.browser.setUrl(QUrl(url))
-        # 添加浏览器到窗口中
-        self.setCentralWidget(self.browser)
+    def open(self, url, jsStr=None, jsCallback=None, timeout=10):
+        loop = QEventLoop()
+        # timer = QTimer.singleShot(timeout * 1000, loop.quit)
+        """添加超时等待页面加载完成"""
+        timer = QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(loop.quit)
+        self.loadFinished.connect(loop.quit)
+        self.load(QUrl(url))
+        timer.start(timeout * 1000)
+        loop.exec_()  # 开始执行，并等待加载完成
+        if timer.isActive():
+            # 加载完成执行
+            timer.stop()
+            self.page().toHtml(self.htmlCallable)
+            if jsStr and isfunction(jsCallback):
+                def jsCallable(data):
+                    jsCallback(data)
+                    self.app.quit()
 
-        ###使用QToolBar创建导航栏，并使用QAction创建按钮
-        # 添加导航栏
-        navigation_bar = QToolBar('Navigation')
-        # 设定图标的大小
-        navigation_bar.setIconSize(QSize(16, 16))
-        # 添加导航栏到窗口中
-        self.addToolBar(navigation_bar)
+                self.page().runJavaScript(jsStr, jsCallable)
+        else:
+            # 超时
+            timer.stop()
+            print('请求超时：' + url)
 
-        # QAction类提供了抽象的用户界面action，这些action可以被放置在窗口部件中
-        # 添加前进、后退、停止加载和刷新的按钮
-        back_button = QAction('返回', self)
-        next_button = QAction('前进', self)
-        stop_button = QAction('停止', self)
-        reload_button = QAction('刷新', self)
+        self.app.exec_()
 
-        back_button.triggered.connect(self.browser.back)
-        next_button.triggered.connect(self.browser.forward)
-        stop_button.triggered.connect(self.browser.stop)
-        reload_button.triggered.connect(self.browser.reload)
+    def openLocalPage(self, path):
+        with open(path, 'r') as f:
+            html = f.read()
+            self.webEngineView.setHtml(html)
 
-        # 将按钮添加到导航栏上
-        navigation_bar.addAction(back_button)
-        navigation_bar.addAction(next_button)
-        navigation_bar.addAction(stop_button)
-        navigation_bar.addAction(reload_button)
+    def htmlCallable(self, data):
+        self.html = data
+        self.tree = lxml.html.fromstring(self.html)
+        # dodo = self.page().action(QWebEnginePage.SelectAll)
 
-        # 添加URL地址栏
-        self.urlbar = QLineEdit()
-        # 让地址栏能响应回车按键信号
-        self.urlbar.returnPressed.connect(self.navigate_to_url)
+    def get_html(self):
+        """Shortcut to return the current HTML"""
+        return self.html
 
-        navigation_bar.addSeparator()
-        navigation_bar.addWidget(self.urlbar)
+    def find(self, pattern):
+        """Find all elements that match the pattern"""
+        # return self.page().mainFrame().findAllElements(pattern)
+        return self.tree.cssselect(pattern)
 
-        # 让浏览器相应url地址的变化
-        self.browser.urlChanged.connect(self.renew_urlbar)
+    def attr(self, pattern, name, value):
+        """Set attribute for matching elements"""
+        for e in self.find(pattern):
+            e.attrib.update({name: value})
 
-    def navigate_to_url(self):
-        q = QUrl(self.urlbar.text())
-        if q.scheme() == '':
-            q.setScheme('http')
-        self.browser.setUrl(q)
+        # self.page().setHtml(str(lxml.html.tostring(self.tree), encoding="utf8"), baseUrl=QUrl('http://example.python-scraping.com/search'))
+        # self.setHtml(str(lxml.html.tostring(self.tree), encoding="utf8"))
 
-    def renew_urlbar(self, q):
-        # 将当前网页的链接更新到地址栏
-        self.urlbar.setText(q.toString())
-        self.urlbar.setCursorPosition(0)
+    def text(self, pattern, value):
+        """Set attribute for matching elements"""
+        for e in self.find(pattern):
+            e.text = value
+
+        # self.page().setHtml(str(lxml.html.tostring(self.tree), encoding="utf8"), baseUrl=QUrl('http://example.python-scraping.com/search'))
+        # self.setHtml(str(lxml.html.tostring(self.tree), encoding="utf8"))
+
+    def setSearchItem(self, pattern, search_value):
+        """Click matching elements"""
+        page: QWebEnginePage = self.page()
+        js_string = '''
+        function myFunction(id, value)
+        {{
+            document.getElementById(id).value = value;
+            document.getElementById('page_size').children[1].selected = true
+            document.getElementById('page_size').children[1].innerText = 1000
+            return document.getElementById(id).value;
+        }}
+
+        myFunction("{id}", "{value}");
+        '''
+
+        for e in self.find(pattern):
+            page.runJavaScript(js_string.format(id=e.attrib['id'], value=search_value), self.js_callback)
+
+        self.app.exec_()
+
+    def click(self, pattern):
+        """Click matching elements"""
+        page: QWebEnginePage = self.page()
+        js_string = '''
+        function myFunction(id)
+        {{
+            document.getElementById(id).click();
+            return id
+        }}
+
+        myFunction("{id}");
+        '''
+
+        for e in self.find(pattern):
+            page.runJavaScript(js_string.format(id=e.attrib['id']), self.js_callback)
+
+        self.app.exec_()
+
+    def js_callback(self, result):
+        print(result)
+        self.app.quit()
+        # QMessageBox.information(self, "提示", str(result))
+
+    def wait_load(self, pattern, timeout=60):
+        """Wait for this pattern to be found in webpage and return matches"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self.app.processEvents()
+
+            matches = self.find(pattern)
+            if matches:
+                return matches
+            else:
+                self.page().toHtml(self.callable)
+                self.app.exec_()
+        print('Wait load timed out')
