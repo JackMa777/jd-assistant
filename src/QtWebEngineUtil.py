@@ -5,6 +5,9 @@ import lxml.html
 from PyQt5.QtCore import *
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtWidgets import *
+from PyQt5.QtNetwork import QNetworkCookieJar, QNetworkCookie
+
+from exception import AsstException
 
 
 class CustomBrowser(QWebEngineView):
@@ -12,10 +15,54 @@ class CustomBrowser(QWebEngineView):
     def __init__(self, *args, **kwargs):
         self.app = QApplication([])
         QWebEngineView.__init__(self)
+        self.cookie_jar = QNetworkCookieJar()
         self.html = ''
         self.tree: lxml.html.etree._Element = None
 
-    def open(self, url, jsStr=None, jsCallback=None, timeout=10):
+    def open(self, url, headers=None, jsStr=None, jsCallback=None, timeout=10):
+        def loadUrl():
+            self.setHeaders(headers)
+            return self.load(QUrl(url))
+
+        self.customizeOpenPage(loadUrl, jsStr, jsCallback, timeout)
+
+    def openLocalPage(self, htmlPath, headers=None, jsStr=None, jsCallback=None, timeout=10):
+        def loadHtml():
+            self.setHeaders(headers)
+            with open(htmlPath, 'r', encoding='utf8') as f:
+                html = f.read()
+                self.setHtml(html)
+
+        self.customizeOpenPage(loadHtml, jsStr, jsCallback, timeout)
+
+    def setHeaders(self, headers):
+        my_cookie_dict = headers['cookies']
+        # cookies = []
+        page = self.page()
+        cookie_store = page.cookieStore()
+        for key, values in my_cookie_dict.items():
+            my_cookie = QNetworkCookie(name=QByteArray(key.encode()), value=QByteArray(values.encode()))
+            # my_cookie.setName(key.encode())
+            my_cookie.setDomain(headers['origin'])
+            my_cookie.setPath(headers['origin'])
+            # my_cookie.setValue(values.encode())
+            cookie_store.cookieAdded(my_cookie)
+            # my_cookie = QNetworkCookie(name=QByteArray(key), value=QByteArray(values))
+            # cookies.append(my_cookie)
+
+        # self.cookie_jar.setAllCookies(cookies)
+
+        # self.cookie_jar.setCookiesFromUrl(cookies, QUrl('https://www.baidu.com/'))
+
+        # page.profile().cookieStore().setCookie(my_cookie)
+
+        # page.profile().cookieStore().setCookie(self.cookie_jar)
+
+        page.profile().setHttpUserAgent(headers['User-Agent'])
+
+    def customizeOpenPage(self, loadFunc, jsStr=None, jsCallback=None, timeout=10):
+        if not loadFunc:
+            raise AsstException('加载方法为空')
         loop = QEventLoop()
         # timer = QTimer.singleShot(timeout * 1000, loop.quit)
         """添加超时等待页面加载完成"""
@@ -23,35 +70,28 @@ class CustomBrowser(QWebEngineView):
         timer.setSingleShot(True)
         timer.timeout.connect(loop.quit)
         self.loadFinished.connect(loop.quit)
-        self.load(QUrl(url))
+        loadFunc()
         timer.start(timeout * 1000)
         loop.exec_()  # 开始执行，并等待加载完成
         if timer.isActive():
             # 加载完成执行
             timer.stop()
-            self.page().toHtml(self.htmlCallable)
+
+            def htmlCallable(data):
+                self.html = data
+                self.tree = lxml.html.fromstring(self.html)
+                # dodo = self.page().action(QWebEnginePage.SelectAll)
+            self.page().toHtml(htmlCallable)
             if jsStr and isfunction(jsCallback):
                 def jsCallable(data):
                     jsCallback(data)
                     self.app.quit()
-
                 self.page().runJavaScript(jsStr, jsCallable)
         else:
             # 超时
             timer.stop()
-            print('请求超时：' + url)
-
+            print('请求超时：' + self.url())
         self.app.exec_()
-
-    def openLocalPage(self, path):
-        with open(path, 'r') as f:
-            html = f.read()
-            self.webEngineView.setHtml(html)
-
-    def htmlCallable(self, data):
-        self.html = data
-        self.tree = lxml.html.fromstring(self.html)
-        # dodo = self.page().action(QWebEnginePage.SelectAll)
 
     def get_html(self):
         """Shortcut to return the current HTML"""

@@ -7,12 +7,11 @@ import random
 import re
 import time
 from datetime import datetime, timedelta
-import sys
 
 import requests
 from bs4 import BeautifulSoup
-import QtWebEngineUtil
 
+import QtWebEngineUtil
 from config import global_config
 from exception import AsstException
 from log import logger
@@ -70,6 +69,10 @@ class Assistant(object):
             self._load_cookies()
         except Exception:
             pass
+        # 已登陆则刷新cookies
+        if self.is_login:
+            self.nick_name = self.get_user_info()
+            self._save_cookies()
 
     def _load_cookies(self):
         cookies_file = ''
@@ -704,6 +707,7 @@ class Assistant(object):
         }
         try:
             select_resp = self.sess.post(url=select_url, data=data)
+            time.sleep(2)
             remove_resp = self.sess.post(url=remove_url, data=data)
             if (not response_status(select_resp)) or (not response_status(remove_resp)):
                 logger.error('购物车清空失败')
@@ -1574,32 +1578,39 @@ class Assistant(object):
         fp = ''
         track_id = ''
         risk_control = ''
-        headers = {
-            'dnt': '1',
-            'User-Agent': self.user_agent,
-            'referer': 'https://trade.jd.com/',
-        }
         tdjs = ''
-        resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
-        if not resp.text:
-            tdjs = open('../js/td.js', 'r', encoding='utf8').read()
-        else:
-            tdjs = resp.text
+        # resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
+        # if not resp.text:
+        #     tdjs = open('../js/td.js', 'r', encoding='utf8').read()
+        # else:
+        #     tdjs = resp.text
         # tdjs_data = execjs.eval(tdjs)
-        cookies = self.sess.cookies
 
         # 启动浏览器
         br = QtWebEngineUtil.CustomBrowser()
+
         def dadaw(data):
             print(data)
-        br.open('https://www.baidu.com', '''
-                    function myFunction()
-                    {
-                        return document.body.scrollWidth;
-                    }
 
-                    myFunction();
-                    ''', dadaw)
+        headers = {
+            'dnt': '1',
+            'User-Agent': self.user_agent,
+            'origin': 'https://jd.com/',
+            'referer': 'https://trade.jd.com/',
+            'cookies': self.sess.cookies,
+        }
+
+        br.openLocalPage('../get_eid_fp.html', headers, '''
+        function getObj(){
+            var obj = {eid: '', fp: ''};
+            getJdEid(function (eid, fp, udfp) {
+                obj.eid = eid;
+                obj.fp = fp;
+            });
+            return obj;
+        };
+        getObj()
+        ''', dadaw)
         # chrome_options = webdriver.ChromeOptions()
         # chrome_options.add_argument('--headless')
         # chrome_options.add_argument('--disable-gpu')
