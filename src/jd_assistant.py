@@ -1589,6 +1589,8 @@ class Assistant(object):
         # 启动浏览器
         br = QtWebEngineUtil.CustomBrowser()
 
+        cookies = self.sess.cookies
+
         def dadaw(data):
             print(data)
 
@@ -1597,7 +1599,7 @@ class Assistant(object):
             'User-Agent': self.user_agent,
             'origin': 'https://jd.com/',
             'referer': 'https://trade.jd.com/',
-            'cookies': self.sess.cookies,
+            'cookies': cookies,
         }
 
         br.openLocalPage('../get_eid_fp.html', headers, '''
