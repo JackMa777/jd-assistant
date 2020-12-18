@@ -1538,7 +1538,7 @@ class Assistant(object):
         # 初始化订单结算页请求信息
         self.request_info['get_checkout_page_request'] = {
             'url': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            'timeout': (0.2, 0.06)
+            'timeout': (0.2, 0.07)
         }
 
         # 初始化提交订单请求信息
@@ -1574,7 +1574,7 @@ class Assistant(object):
     def init_order_request_info(self):
         # 初始化下单必须参数：eid、fp、track_id、risk_control（默认为空）
         # TODO
-        eid = 'a'
+        eid = ''
         fp = ''
         track_id = ''
         risk_control = ''

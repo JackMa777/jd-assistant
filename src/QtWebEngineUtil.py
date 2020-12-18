@@ -15,7 +15,6 @@ class CustomBrowser(QWebEngineView):
     def __init__(self, *args, **kwargs):
         self.app = QApplication([])
         QWebEngineView.__init__(self)
-        self.cookie_jar = QNetworkCookieJar()
         self.html = ''
         self.tree: lxml.html.etree._Element = None
 
@@ -37,28 +36,20 @@ class CustomBrowser(QWebEngineView):
 
     def setHeaders(self, headers):
         my_cookie_dict = headers['cookies']
-        # cookies = []
-        page = self.page()
-        cookie_store = page.cookieStore()
+        profile = self.page().profile()
+        cookie_store = profile.cookieStore()
+        # QNetworkCookie.parseCookies(my_cookie_dict)
         for key, values in my_cookie_dict.items():
-            my_cookie = QNetworkCookie(name=QByteArray(key.encode()), value=QByteArray(values.encode()))
+            jd_cookie = QNetworkCookie(name=QByteArray(key.encode()), value=QByteArray(values.encode()))
+            # TODO 设置SameSite=None
+            # jd_cookie.setSecure()
             # my_cookie.setName(key.encode())
-            my_cookie.setDomain(headers['origin'])
-            my_cookie.setPath(headers['origin'])
+            # my_cookie.setPath('/')
             # my_cookie.setValue(values.encode())
-            cookie_store.cookieAdded(my_cookie)
-            # my_cookie = QNetworkCookie(name=QByteArray(key), value=QByteArray(values))
-            # cookies.append(my_cookie)
-
-        # self.cookie_jar.setAllCookies(cookies)
-
-        # self.cookie_jar.setCookiesFromUrl(cookies, QUrl('https://www.baidu.com/'))
-
-        # page.profile().cookieStore().setCookie(my_cookie)
-
-        # page.profile().cookieStore().setCookie(self.cookie_jar)
-
-        page.profile().setHttpUserAgent(headers['User-Agent'])
+            cookie_store.setCookie(jd_cookie, QUrl(headers['origin']))
+        cookie_store.setProperty()
+        cookie_store.loadAllCookies()
+        profile.setHttpUserAgent(headers['User-Agent'])
 
     def customizeOpenPage(self, loadFunc, jsStr=None, jsCallback=None, timeout=10):
         if not loadFunc:
