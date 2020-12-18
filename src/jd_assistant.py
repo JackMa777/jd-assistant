@@ -1587,22 +1587,25 @@ class Assistant(object):
         # tdjs_data = execjs.eval(tdjs)
 
         # 启动浏览器
-        br = QtWebEngineUtil.CustomBrowser()
+        br = QtWebEngineUtil.CustomBrowser(self.sess.cookies, self.user_agent)
 
-        cookies = self.sess.cookies
-
-        def dadaw(data):
+        def jsCallback(data):
             print(data)
 
         headers = {
+            # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-encoding': 'gzip, deflate, br',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'cache-control': 'max-age=0',
             'dnt': '1',
-            'User-Agent': self.user_agent,
-            'domian': '.jd.com',
-            'referer': 'https://trade.jd.com/',
-            'cookies': cookies,
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
         }
 
-        br.openLocalPage('../get_eid_fp.html', headers, '''
+        br.openGetUrl('https://order.jd.com/center/list.action', headers, '''
         function getObj(){
             var obj = {eid: '', fp: ''};
             getJdEid(function (eid, fp, udfp) {
@@ -1612,7 +1615,7 @@ class Assistant(object):
             return obj;
         };
         getObj()
-        ''', dadaw)
+        ''', jsCallback)
         # chrome_options = webdriver.ChromeOptions()
         # chrome_options.add_argument('--headless')
         # chrome_options.add_argument('--disable-gpu')

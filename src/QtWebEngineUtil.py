@@ -3,57 +3,55 @@ from inspect import isfunction
 
 import lxml.html
 from PyQt5.QtCore import *
+from PyQt5.QtNetwork import QNetworkCookie
+from PyQt5.QtWebEngineCore import QWebEngineHttpRequest
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtWidgets import *
-from PyQt5.QtNetwork import QNetworkCookie
 
 from exception import AsstException
 
 
 class CustomBrowser(QWebEngineView):
-    # noinspection PyUnresolvedReferences
-    def __init__(self, *args, **kwargs):
+
+    def __init__(self, cookies, user_agent, *args, **kwargs):
         self.app = QApplication([])
         QWebEngineView.__init__(self)
         self.html = ''
         self.tree: lxml.html.etree._Element = None
-        # self.setProperty("--args", "--disable-web-security")
-        # self.settings().setAttribute("--args --disable-web-security")
+        # settings = self.settings()
+        # settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+        # settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        # 本地存储必须开启
+        self.settings().setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
+        my_cookie_dict = cookies
+        page = self.page()
+        profile = page.profile().defaultProfile()
+        if user_agent:
+            profile.setHttpUserAgent(user_agent)
+        cookie_store = profile.cookieStore()
+        for cookie in iter(my_cookie_dict):
+            jd_cookie = QNetworkCookie(name=QByteArray(cookie.name.encode()), value=QByteArray(cookie.value.encode()))
+            # jd_cookie.setHttpOnly(True)
+            # jd_cookie.setExpirationDate(cookie.expires)
+            jd_cookie.setSecure(cookie.secure)
+            jd_cookie.setPath(cookie.path)
+            jd_cookie.setDomain(cookie.domain)
+            cookie_store.setCookie(jd_cookie)
+        cookie_store.loadAllCookies()
 
-    def open(self, url, headers=None, jsStr=None, jsCallback=None, timeout=10):
+    def openGetUrl(self, url, headers=None, jsStr=None, jsCallback=None, timeout=10):
+        if headers is None:
+            headers = dict()
+
         def loadUrl():
-            self.setHeaders(headers)
-            return self.load(QUrl(url))
+            request = QWebEngineHttpRequest()
+            request.setUrl(QUrl(url))
+            request.setMethod(QWebEngineHttpRequest.Method.Get)
+            for key, values in headers.items():
+                request.setHeader(QByteArray(key.encode()), QByteArray(values.encode()))
+            self.load(request)
 
         self.customizeOpenPage(loadUrl, jsStr, jsCallback, timeout)
-
-    def openLocalPage(self, htmlPath, headers=None, jsStr=None, jsCallback=None, timeout=10):
-        def loadHtml():
-            self.setHeaders(headers)
-            with open(htmlPath, 'r', encoding='utf8') as f:
-                html = f.read()
-                self.setHtml(html)
-
-        self.customizeOpenPage(loadHtml, jsStr, jsCallback, timeout)
-
-    def setHeaders(self, headers):
-        my_cookie_dict = headers['cookies']
-        profile = self.page().profile()
-        cookie_store = profile.cookieStore()
-        # QNetworkCookie.parseCookies(my_cookie_dict)
-        for key, values in my_cookie_dict.items():
-            jd_cookie = QNetworkCookie(name=QByteArray(key.encode()), value=QByteArray(values.encode()))
-            # TODO 设置SameSite=None
-            # jd_cookie.setHttpOnly(True)
-            # jd_cookie.setDomain(headers['domian'])
-            # jd_cookie.setSecure(True)
-            # my_cookie.setName(key.encode())
-            # my_cookie.setPath('/')
-            # my_cookie.setValue(values.encode())
-            cookie_store.setCookie(jd_cookie)
-        # cookie_store.setProperty()
-        cookie_store.loadAllCookies()
-        profile.setHttpUserAgent(headers['User-Agent'])
 
     def customizeOpenPage(self, loadFunc, jsStr=None, jsCallback=None, timeout=10):
         if not loadFunc:
@@ -74,16 +72,18 @@ class CustomBrowser(QWebEngineView):
             if jsStr and isfunction(jsCallback):
                 def jsCallable(data):
                     jsCallback(data)
+
                 self.page().runJavaScript(jsStr, jsCallable)
 
             def htmlCallable(data):
                 self.html = data
                 self.tree = lxml.html.fromstring(self.html)
                 # dodo = self.page().action(QWebEnginePage.SelectAll)
+
             self.page().toHtml(htmlCallable)
 
-            # self.show()
-            self.quit()
+            self.show()
+            # self.quit()
         else:
             # 超时
             timer.stop()
