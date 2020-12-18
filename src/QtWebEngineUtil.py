@@ -5,7 +5,7 @@ import lxml.html
 from PyQt5.QtCore import *
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtWidgets import *
-from PyQt5.QtNetwork import QNetworkCookieJar, QNetworkCookie
+from PyQt5.QtNetwork import QNetworkCookie
 
 from exception import AsstException
 
@@ -17,6 +17,8 @@ class CustomBrowser(QWebEngineView):
         QWebEngineView.__init__(self)
         self.html = ''
         self.tree: lxml.html.etree._Element = None
+        # self.setProperty("--args", "--disable-web-security")
+        # self.settings().setAttribute("--args --disable-web-security")
 
     def open(self, url, headers=None, jsStr=None, jsCallback=None, timeout=10):
         def loadUrl():
@@ -42,12 +44,14 @@ class CustomBrowser(QWebEngineView):
         for key, values in my_cookie_dict.items():
             jd_cookie = QNetworkCookie(name=QByteArray(key.encode()), value=QByteArray(values.encode()))
             # TODO 设置SameSite=None
-            # jd_cookie.setSecure()
+            # jd_cookie.setHttpOnly(True)
+            # jd_cookie.setDomain(headers['domian'])
+            # jd_cookie.setSecure(True)
             # my_cookie.setName(key.encode())
             # my_cookie.setPath('/')
             # my_cookie.setValue(values.encode())
-            cookie_store.setCookie(jd_cookie, QUrl(headers['origin']))
-        cookie_store.setProperty()
+            cookie_store.setCookie(jd_cookie)
+        # cookie_store.setProperty()
         cookie_store.loadAllCookies()
         profile.setHttpUserAgent(headers['User-Agent'])
 
@@ -67,22 +71,27 @@ class CustomBrowser(QWebEngineView):
         if timer.isActive():
             # 加载完成执行
             timer.stop()
+            if jsStr and isfunction(jsCallback):
+                def jsCallable(data):
+                    jsCallback(data)
+                self.page().runJavaScript(jsStr, jsCallable)
 
             def htmlCallable(data):
                 self.html = data
                 self.tree = lxml.html.fromstring(self.html)
                 # dodo = self.page().action(QWebEnginePage.SelectAll)
             self.page().toHtml(htmlCallable)
-            if jsStr and isfunction(jsCallback):
-                def jsCallable(data):
-                    jsCallback(data)
-                    self.app.quit()
-                self.page().runJavaScript(jsStr, jsCallable)
+
+            # self.show()
+            self.quit()
         else:
             # 超时
             timer.stop()
             print('请求超时：' + self.url())
         self.app.exec_()
+
+    def quit(self):
+        self.app.quit()
 
     def get_html(self):
         """Shortcut to return the current HTML"""

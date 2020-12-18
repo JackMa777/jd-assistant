@@ -1597,7 +1597,7 @@ class Assistant(object):
         headers = {
             'dnt': '1',
             'User-Agent': self.user_agent,
-            'origin': 'https://jd.com/',
+            'domian': '.jd.com',
             'referer': 'https://trade.jd.com/',
             'cookies': cookies,
         }
