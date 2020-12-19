@@ -1589,9 +1589,6 @@ class Assistant(object):
         # 启动浏览器
         br = QtWebEngineUtil.CustomBrowser(self.sess.cookies, self.user_agent)
 
-        def jsCallback(data):
-            print(data)
-
         headers = {
             # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
             'accept-encoding': 'gzip, deflate, br',
@@ -1605,17 +1602,37 @@ class Assistant(object):
             'upgrade-insecure-requests': '1',
         }
 
-        br.openGetUrl('https://order.jd.com/center/list.action', headers, '''
-        function getObj(){
-            var obj = {eid: '', fp: ''};
-            getJdEid(function (eid, fp, udfp) {
-                obj.eid = eid;
-                obj.fp = fp;
-            });
-            return obj;
-        };
-        getObj()
-        ''', jsCallback)
+        br.openGetUrl('https://t.jd.com/home/follow', headers)
+
+        def jsCallback(data):
+            # print(data)
+            eid = data['eid']
+            fp = data['fp']
+            track_id = data['trackId']
+            if eid:
+                self.eid = eid
+            if fp:
+                self.fp = fp
+            if track_id:
+                self.track_id = track_id
+            if eid and fp and track_id:
+                logger.info('自动初始化下单参数成功！')
+
+        jsFunc = QtWebEngineUtil.JsScript('''
+            function getCookie(cname){var name=cname+'=';var decodedCookie=decodeURIComponent(document.cookie);var ca=decodedCookie.split(';');for(var i = 0;i <ca.length;i++){var c=ca[i];while (c.charAt(0)==' '){c=c.substring(1);}if(c.indexOf(name)==0){return c.substring(name.length,c.length);}}return "";};
+            function getObj(){
+                var obj = {eid: '', fp: '', trackId: ''};
+                getJdEid(function (eid, fp, udfp) {
+                    obj.eid = eid;
+                    obj.fp = fp;
+                    obj.trackId = getCookie("TrackID");
+                });
+                return obj;
+            };
+            getObj()
+            ''', jsCallback)
+        time.sleep(0.5)
+        br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
         # chrome_options = webdriver.ChromeOptions()
         # chrome_options.add_argument('--headless')
         # chrome_options.add_argument('--disable-gpu')
@@ -1631,7 +1648,10 @@ class Assistant(object):
 
         # self.eid = eid
         # self.fp = fp
-        self.track_id = requests.utils.dict_from_cookiejar(cookies)['TrackID']
+
+        # 关闭浏览器
+        br.quit()
+        # self.track_id = requests.utils.dict_from_cookiejar(cookies)['TrackID']
         # self.risk_control = risk_control
         if not self.eid or not self.fp or not self.track_id:
-            raise AsstException('自动初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')

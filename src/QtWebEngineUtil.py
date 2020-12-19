@@ -39,7 +39,7 @@ class CustomBrowser(QWebEngineView):
             cookie_store.setCookie(jd_cookie)
         cookie_store.loadAllCookies()
 
-    def openGetUrl(self, url, headers=None, jsStr=None, jsCallback=None, timeout=10):
+    def openGetUrl(self, url, headers=None, JsScript=None, timeout=10):
         if headers is None:
             headers = dict()
 
@@ -51,9 +51,9 @@ class CustomBrowser(QWebEngineView):
                 request.setHeader(QByteArray(key.encode()), QByteArray(values.encode()))
             self.load(request)
 
-        self.customizeOpenPage(loadUrl, jsStr, jsCallback, timeout)
+        self.customizeOpenPage(loadUrl, JsScript, timeout)
 
-    def customizeOpenPage(self, loadFunc, jsStr=None, jsCallback=None, timeout=10):
+    def customizeOpenPage(self, loadFunc, JsScript=None, timeout=10):
         if not loadFunc:
             raise AsstException('加载方法为空')
         loop = QEventLoop()
@@ -69,21 +69,28 @@ class CustomBrowser(QWebEngineView):
         if timer.isActive():
             # 加载完成执行
             timer.stop()
-            if jsStr and isfunction(jsCallback):
-                def jsCallable(data):
-                    jsCallback(data)
-
-                self.page().runJavaScript(jsStr, jsCallable)
+            if JsScript:
+                js_str = JsScript.js_str
+                js_callback = JsScript.js_callback
+                if js_str and isfunction(js_callback):
+                    def jsCallAble(data):
+                        js_callback(data)
+                        # self.show()
+                        self.app.quit()
+                    time.sleep(2)
+                    self.page().runJavaScript(js_str, jsCallAble)
+                else:
+                    # self.show()
+                    self.app.quit()
 
             def htmlCallable(data):
                 self.html = data
                 self.tree = lxml.html.fromstring(self.html)
+                # self.show()
+                self.app.quit()
                 # dodo = self.page().action(QWebEnginePage.SelectAll)
 
             self.page().toHtml(htmlCallable)
-
-            self.show()
-            # self.quit()
         else:
             # 超时
             timer.stop()
@@ -92,6 +99,7 @@ class CustomBrowser(QWebEngineView):
 
     def quit(self):
         self.app.quit()
+        self.destroy()
 
     def get_html(self):
         """Shortcut to return the current HTML"""
@@ -174,3 +182,10 @@ class CustomBrowser(QWebEngineView):
                 self.page().toHtml(self.callable)
                 self.app.exec_()
         print('Wait load timed out')
+
+
+class JsScript:
+
+    def __init__(self, js_str, js_callback):
+        self.js_str = js_str
+        self.js_callback = js_callback
