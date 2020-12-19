@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
+import QtWebEngineUtil
 from config import global_config
 from exception import AsstException
 from log import logger
@@ -68,6 +69,10 @@ class Assistant(object):
             self._load_cookies()
         except Exception:
             pass
+        # 已登陆则刷新cookies
+        if self.is_login:
+            self.nick_name = self.get_user_info()
+            self._save_cookies()
 
     def _load_cookies(self):
         cookies_file = ''
@@ -702,6 +707,7 @@ class Assistant(object):
         }
         try:
             select_resp = self.sess.post(url=select_url, data=data)
+            time.sleep(2)
             remove_resp = self.sess.post(url=remove_url, data=data)
             if (not response_status(select_resp)) or (not response_status(remove_resp)):
                 logger.error('购物车清空失败')
@@ -1532,7 +1538,7 @@ class Assistant(object):
         # 初始化订单结算页请求信息
         self.request_info['get_checkout_page_request'] = {
             'url': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            'timeout': (0.2, 0.06)
+            'timeout': (0.2, 0.07)
         }
 
         # 初始化提交订单请求信息
@@ -1568,26 +1574,84 @@ class Assistant(object):
     def init_order_request_info(self):
         # 初始化下单必须参数：eid、fp、track_id、risk_control（默认为空）
         # TODO
-        eid = 'a'
+        eid = ''
         fp = ''
         track_id = ''
         risk_control = ''
-        headers = {
-            'dnt': '1',
-            'User-Agent': self.user_agent,
-            'referer': 'https://trade.jd.com/',
-        }
         tdjs = ''
-        resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
-        if not resp.text:
-            tdjs = open('../js/td.js', 'r', encoding='utf8').read()
-        else:
-            tdjs = resp.text
+        # resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
+        # if not resp.text:
+        #     tdjs = open('../js/td.js', 'r', encoding='utf8').read()
+        # else:
+        #     tdjs = resp.text
         # tdjs_data = execjs.eval(tdjs)
+
+        # 启动浏览器
+        br = QtWebEngineUtil.CustomBrowser(self.sess.cookies, self.user_agent)
+
+        headers = {
+            # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-encoding': 'gzip, deflate, br',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'cache-control': 'max-age=0',
+            'dnt': '1',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+        }
+
+        br.openGetUrl('https://t.jd.com/home/follow', headers)
+
+        def jsCallback(data):
+            # print(data)
+            eid = data['eid']
+            fp = data['fp']
+            track_id = data['trackId']
+            if eid:
+                self.eid = eid
+            if fp:
+                self.fp = fp
+            if track_id:
+                self.track_id = track_id
+            if eid and fp and track_id:
+                logger.info('自动初始化下单参数成功！')
+
+        jsFunc = QtWebEngineUtil.JsScript('''
+            function getCookie(cname){var name=cname+'=';var decodedCookie=decodeURIComponent(document.cookie);var ca=decodedCookie.split(';');for(var i = 0;i <ca.length;i++){var c=ca[i];while (c.charAt(0)==' '){c=c.substring(1);}if(c.indexOf(name)==0){return c.substring(name.length,c.length);}}return "";};
+            function getObj(){
+                var obj = {eid: '', fp: '', trackId: ''};
+                getJdEid(function (eid, fp, udfp) {
+                    obj.eid = eid;
+                    obj.fp = fp;
+                    obj.trackId = getCookie("TrackID");
+                });
+                return obj;
+            };
+            getObj()
+            ''', jsCallback)
+        time.sleep(0.5)
+        br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
+        # chrome_options = webdriver.ChromeOptions()
+        # chrome_options.add_argument('--headless')
+        # chrome_options.add_argument('--disable-gpu')
+        # client = webdriver.Chrome(chrome_options=chrome_options, executable_path='chromedriver.exe',
+        #                           service_log_path='--log-path=webdriver/chromedriver.log')
+        # client.add_cookie(cookies)
+        # # 如果没有把chromedriver加入到PATH中,就需要指明路径 executable_path='/home/chromedriver'
+        #
+        # client.get("https://www.aliyun.com/jiaocheng/124644.html")
+        # content = client.page_source
+        # print(content)
+        # client.quit()
 
         # self.eid = eid
         # self.fp = fp
-        self.track_id = requests.utils.dict_from_cookiejar(self.sess.cookies)['TrackID']
+
+        # 关闭浏览器
+        br.quit()
+        # self.track_id = requests.utils.dict_from_cookiejar(cookies)['TrackID']
         # self.risk_control = risk_control
         if not self.eid or not self.fp or not self.track_id:
-            raise AsstException('自动初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
