@@ -39,7 +39,8 @@ from util import (
 
 class Assistant(object):
 
-    def __init__(self):
+    def __init__(self, ):
+        self.config = None
         use_random_ua = global_config.getboolean('config', 'random_useragent')
         self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
         self.headers = {'User-Agent': self.user_agent}
@@ -644,17 +645,7 @@ class Assistant(object):
         :return:
         """
 
-        request_info = self.request_info['add_cart_request']
-        if not request_info:
-            url = 'https://cart.jd.com/gate.action'
-            headers = {
-                'User-Agent': self.user_agent,
-            }
-            timeout = (0.2, 0.025)
-        else:
-            url = request_info['url']
-            headers = request_info['headers']
-            timeout = request_info['timeout']
+        add_cart_request = self.request_info['add_cart_request']
 
         for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
             payload = {
@@ -666,7 +657,7 @@ class Assistant(object):
             i = 0
             while i < 3:
                 try:
-                    resp = self.sess.get(url=url, params=payload, headers=headers, timeout=timeout)
+                    resp = add_cart_request(payload)
                     if 'https://cart.jd.com/cart.action' in resp.url:  # 套装商品加入购物车后直接跳转到购物车页面
                         result = True
                     else:  # 普通商品成功加入购物车后会跳转到提示 "商品已成功加入购物车！" 页面
@@ -834,14 +825,7 @@ class Assistant(object):
         :return: 结算信息 dict
         """
 
-        request_info = self.request_info['get_checkout_page_request']
-        if not request_info:
-            url = 'http://trade.jd.com/shopping/order/getOrderInfo.action'
-            # url = 'https://cart.jd.com/gotoOrder.action'
-            timeout = (0.2, 0.06)
-        else:
-            url = request_info['url']
-            timeout = request_info['timeout']
+        get_checkout_page_request = self.request_info['get_checkout_page_request']
 
         payload = {
             'rid': str(int(time.time() * 1000)),
@@ -850,7 +834,7 @@ class Assistant(object):
         i = 0
         while i < 3:
             try:
-                resp = self.sess.get(url=url, params=payload, timeout=timeout)
+                resp = get_checkout_page_request(payload)
                 if not response_status(resp):
                     logger.error('获取订单结算页信息失败')
                     return
@@ -951,45 +935,10 @@ class Assistant(object):
 
         :return: True/False 订单提交结果
         """
-        request_info = self.request_info['submit_order_request']
-        if not request_info:
-            url = 'https://trade.jd.com/shopping/order/submitOrder.action'
-            # js function of submit order is included in https://trade.jd.com/shopping/misc/js/order.js?r=2018070403091
-
-            data = {
-                'overseaPurchaseCookies': '',
-                'vendorRemarks': '[]',
-                'submitOrderParam.sopNotPutInvoice': 'false',
-                'submitOrderParam.trackID': 'TestTrackId',
-                'submitOrderParam.ignorePriceChange': '0',
-                'submitOrderParam.btSupport': '0',
-                'riskControl': self.risk_control,
-                'submitOrderParam.isBestCoupon': 1,
-                'submitOrderParam.jxj': 1,
-                'submitOrderParam.trackId': self.track_id,  # Todo: need to get trackId
-                'submitOrderParam.eid': self.eid,
-                'submitOrderParam.fp': self.fp,
-                'submitOrderParam.needCheck': 1,
-            }
-
-            # add payment password when necessary
-            payment_pwd = global_config.get('account', 'payment_pwd')
-            if payment_pwd:
-                data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
-
-            headers = {
-                'User-Agent': self.user_agent,
-                'Host': 'trade.jd.com',
-                'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            }
-        else:
-            url = request_info['url']
-            data = request_info['data']
-            data['riskControl'] = self.risk_control
-            headers = request_info['headers']
+        submit_order_request = self.request_info['submit_order_request']
 
         try:
-            resp = self.sess.post(url=url, data=data, headers=headers)
+            resp = submit_order_request()
             # 暂时不设置超时时间
             # resp = self.sess.post(url=url, data=data, headers=headers, timeout=(0.1, 0.08))
             resp_json = json.loads(resp.text)
@@ -1425,8 +1374,7 @@ class Assistant(object):
             self.exec_seckill(sku_id, server_buy_time, retry, interval, num, fast_mode)
 
     @check_login
-    def exec_reserve_seckill_by_time(self, sku_id, buy_time=None, retry=4, interval=4, num=1, is_pass_cart=False,
-                                     sleep_interval=0.5, fast_sleep_interval=0.01):
+    def exec_reserve_seckill_by_time(self, config):
         """定时抢购`预约抢购商品`
 
         一定要确保预约的商品在购物车中才能使用这种方式！！！否则只能用其他方式
@@ -1447,27 +1395,36 @@ class Assistant(object):
         :return:
         """
 
-        if buy_time is None:
+        if not config:
+            raise AsstException('初始化配置为空！')
+
+        self.config = config
+
+        if config.buy_time is None:
             exit(-1)
 
         # 开抢前清空购物车
         self.clear_cart()
 
-        # 提前初始化请求信息
-        self.init_request_info()
+        # 提前初始化请求方法
+        self.init_request_method(config.fast_mode, config.is_risk_control)
 
-        logger.info('准备抢购商品id为：%s', sku_id)
+        interval = config.interval
 
-        t = Timer(buy_time=buy_time, sleep_interval=sleep_interval, fast_sleep_interval=fast_sleep_interval)
+        logger.info('准备抢购商品id为：%s', config.sku_id)
+
+        t = Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
+                  fast_sleep_interval=config.fast_sleep_interval)
         t.start()
 
-        if is_pass_cart is not True:
-            self.add_item_to_cart(sku_ids={sku_id: num})
+        if config.is_pass_cart is not True:
+            self.add_item_to_cart(sku_ids={config.sku_id: config.num})
             # gevent.joinall([gevent.spawn(self.add_item_to_cart(sku_ids={sku_id: num}))])
 
         # 获取订单结算页面信息（后台可能会自动勾选默认地址）
         self.get_checkout_page_detail()
 
+        retry = config.retry
         for count in range(1, retry + 1):
             logger.info('第[%s/%s]次尝试提交订单', count, retry)
             if self.submit_order():
@@ -1523,26 +1480,39 @@ class Assistant(object):
 
                 time.sleep(stock_interval)
 
-    def init_request_info(self):
+    def init_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息
 
-        # 初始化添加购物车请求信息
-        self.request_info['add_cart_request'] = {
-            'url': 'https://cart.jd.com/gate.action',
-            'headers': {
-                'User-Agent': self.user_agent
-            },
-            'timeout': (0.2, 0.025)
+        # 初始化添加购物车请求方法
+        add_cart_request_headers = {
+            'User-Agent': self.user_agent,
         }
+        if fast_mode and is_risk_control is False:
+            def add_cart_request(params):
+                # TODO 使用socket模拟https并截断响应
+                pass
+        else:
+            def add_cart_request(params):
+                return self.sess.get(url='https://cart.jd.com/gate.action', params=params, headers=add_cart_request_headers,
+                                     timeout=(0.2, 0.03))
 
-        # 初始化订单结算页请求信息
-        self.request_info['get_checkout_page_request'] = {
-            'url': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            'timeout': (0.2, 0.07)
-        }
+        self.request_info['add_cart_request'] = add_cart_request
 
-        # 初始化提交订单请求信息
-        data = {
+        # 初始化订单结算页请求方法
+        if fast_mode and is_risk_control is False:
+            def get_checkout_page_request(params):
+                #TODO 使用socket模拟https并截断响应
+                pass
+        else:
+            def get_checkout_page_request(params):
+                # url = 'https://cart.jd.com/gotoOrder.action'
+                return self.sess.get(url='http://trade.jd.com/shopping/order/getOrderInfo.action', params=params,
+                                     timeout=(0.2, 0.07))
+
+        self.request_info['get_checkout_page_request'] = get_checkout_page_request
+
+        # 初始化提交订单请求方法
+        submit_order_request_data = {
             'overseaPurchaseCookies': '',
             'vendorRemarks': '[]',
             'submitOrderParam.sopNotPutInvoice': 'false',
@@ -1557,34 +1527,25 @@ class Assistant(object):
             'submitOrderParam.fp': self.fp,
             'submitOrderParam.needCheck': 1
         }
+        submit_order_request_headers = {
+            'User-Agent': self.user_agent,
+            'Host': 'trade.jd.com',
+            'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action'
+        }
         # 如果有密码则设置
         payment_pwd = global_config.get('account', 'payment_pwd')
         if payment_pwd:
-            data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
-        self.request_info['submit_order_request'] = {
-            'url': 'https://trade.jd.com/shopping/order/submitOrder.action',
-            'data': data,
-            'headers': {
-                'User-Agent': self.user_agent,
-                'Host': 'trade.jd.com',
-                'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action'
-            }
-        }
+            submit_order_request_data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
+
+        def submit_order_request():
+            submit_order_request_data['riskControl'] = self.risk_control
+            return self.sess.post(url='https://trade.jd.com/shopping/order/submitOrder.action',
+                                  data=submit_order_request_data, headers=submit_order_request_headers)
+
+        self.request_info['submit_order_request'] = submit_order_request
 
     def init_order_request_info(self):
         # 初始化下单必须参数：eid、fp、track_id、risk_control（默认为空）
-        # TODO
-        eid = ''
-        fp = ''
-        track_id = ''
-        risk_control = ''
-        tdjs = ''
-        # resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
-        # if not resp.text:
-        #     tdjs = open('../js/td.js', 'r', encoding='utf8').read()
-        # else:
-        #     tdjs = resp.text
-        # tdjs_data = execjs.eval(tdjs)
 
         # 启动浏览器
         br = QtWebEngineUtil.CustomBrowser(self.sess.cookies, self.user_agent)
@@ -1625,25 +1586,8 @@ class Assistant(object):
             ''', jsCallback)
         time.sleep(0.5)
         br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
-        # chrome_options = webdriver.ChromeOptions()
-        # chrome_options.add_argument('--headless')
-        # chrome_options.add_argument('--disable-gpu')
-        # client = webdriver.Chrome(chrome_options=chrome_options, executable_path='chromedriver.exe',
-        #                           service_log_path='--log-path=webdriver/chromedriver.log')
-        # client.add_cookie(cookies)
-        # # 如果没有把chromedriver加入到PATH中,就需要指明路径 executable_path='/home/chromedriver'
-        #
-        # client.get("https://www.aliyun.com/jiaocheng/124644.html")
-        # content = client.page_source
-        # print(content)
-        # client.quit()
-
-        # self.eid = eid
-        # self.fp = fp
 
         # 关闭浏览器
         br.quit()
-        # self.track_id = requests.utils.dict_from_cookiejar(cookies)['TrackID']
-        # self.risk_control = risk_control
         if not self.eid or not self.fp or not self.track_id:
             raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
