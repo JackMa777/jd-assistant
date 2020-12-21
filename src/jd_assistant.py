@@ -1619,16 +1619,8 @@ class Assistant(object):
                 logger.info('自动初始化下单参数成功！')
 
         jsFunc = QtWebEngineUtil.JsScript('''
-            function getCookie(cname){var name=cname+'=';var decodedCookie=decodeURIComponent(document.cookie);var ca=decodedCookie.split(';');for(var i = 0;i <ca.length;i++){var c=ca[i];while (c.charAt(0)==' '){c=c.substring(1);}if(c.indexOf(name)==0){return c.substring(name.length,c.length);}}return "";};
-            function getObj(){
-                var obj = {eid: '', fp: '', trackId: ''};
-                getJdEid(function (eid, fp, udfp) {
-                    obj.eid = eid;
-                    obj.fp = fp;
-                    obj.trackId = getCookie("TrackID");
-                });
-                return obj;
-            };
+            function getCookie(name){ var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)"); if(arr=document.cookie.match(reg)){ return unescape(arr[2]); } else{ return null;} };
+            function getObj(){ var obj = {eid: '', fp: '', trackId: ''}, count = 0; for(var count=0;count<3;count++) { getJdEid(function (eid, fp, udfp) { var trackId = getCookie("TrackID"); if(eid && fp && trackId){ obj.eid = eid; obj.fp = fp; obj.trackId = trackId; return obj; } else { count++; sleep(500) } }); } return obj; };
             getObj()
             ''', jsCallback)
         time.sleep(0.5)

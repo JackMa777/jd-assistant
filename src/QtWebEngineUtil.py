@@ -53,7 +53,7 @@ class CustomBrowser(QWebEngineView):
 
         self.customizeOpenPage(loadUrl, JsScript, timeout)
 
-    def customizeOpenPage(self, loadFunc, JsScript=None, timeout=10):
+    def customizeOpenPage(self, loadFunc, JsScript=None, timeout=30):
         if not loadFunc:
             raise AsstException('加载方法为空')
         loop = QEventLoop()
@@ -75,13 +75,8 @@ class CustomBrowser(QWebEngineView):
                 if js_str and isfunction(js_callback):
                     def jsCallAble(data):
                         js_callback(data)
-                        # self.show()
-                        self.app.quit()
                     time.sleep(2)
                     self.page().runJavaScript(js_str, jsCallAble)
-                else:
-                    # self.show()
-                    self.app.quit()
 
             def htmlCallable(data):
                 self.html = data
