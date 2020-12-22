@@ -36,7 +36,7 @@ class CustomConfig(object):
     sleep_interval = 0.5        # 抢购前倒计时轮询时间，默认0.5秒
     fast_sleep_interval = 0.01  # 抢购5秒内倒计时轮询时间，默认0.01秒
     is_risk_control = False     # 账号是否被风控，默认False
-    fast_mode = True            # 如果帐号没被风控，可启用快速抢购模式，可一定程度提高抢购成功率，默认True
+    fast_mode = False            # 如果帐号没被风控，可启用快速抢购模式，可一定程度提高抢购成功率，默认True
 
     # 配置【预约抢购，自动加入购物车】
     # 注意：一定要在抢购开始前手动清空购物车中此类无法勾选的商品！（因为脚本在执行清空购物车操作时，无法清空不能勾选的商品）
