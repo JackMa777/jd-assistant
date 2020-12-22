@@ -1398,13 +1398,11 @@ class Assistant(object):
                         def resFunc(conn):
                             while True:
                                 data = conn.recv(1)
-                                if data:
-                                    conn.close()
-                                    break
-                                else:
-                                    conn.close()
-                                    break
+                                logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
+                                conn.close()
+                                break
                         send_request_by_socket(url='https://cart.jd.com/gate.action', method='POST', params=params, headers=add_cart_request_headers, resFunc=resFunc)
+                        break
                     except Exception as e:
                         i += 1
                         logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
@@ -1414,9 +1412,6 @@ class Assistant(object):
                 while i < 3:
                     try:
                         resp = self.sess.get(url='https://cart.jd.com/gate.action', params=params, headers=add_cart_request_headers, timeout=(0.2, 0.03))
-                        if resp is True:
-                            logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
-                            break
                         if 'https://cart.jd.com/cart.action' in resp.url:  # 套装商品加入购物车后直接跳转到购物车页面
                             result = True
                         else:  # 普通商品成功加入购物车后会跳转到提示 "商品已成功加入购物车！" 页面
@@ -1449,13 +1444,11 @@ class Assistant(object):
                         def resFunc(conn):
                             while True:
                                 data = conn.recv(1)
-                                if data:
-                                    conn.close()
-                                    break
-                                else:
-                                    conn.close()
-                                    break
+                                logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
+                                conn.close()
+                                break
                         send_request_by_socket(url='http://trade.jd.com/shopping/order/getOrderInfo.action', method='GET', params=params, headers=None, resFunc=resFunc)
+                        break
                     except Exception as e:
                         i += 1
                         logger.error('订单结算页面数据连接超时，开始第 %s 次重试，信息：%s', i, e)

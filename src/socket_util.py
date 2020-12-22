@@ -6,7 +6,7 @@ def send_request_by_socket(url, method='GET', params=None, headers=None, resFunc
     conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # 默认添加请求头
     if headers == None:
-        headers = 'User-Agent: Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1)'
+        headers = 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
     # http协议处理
     if 'http://' in url:
         url = url.replace('http://', '')
@@ -18,6 +18,7 @@ def send_request_by_socket(url, method='GET', params=None, headers=None, resFunc
         port = 443
     url = url if '/' in url else url + '/'
     urlSplit = url.split('/', 1)
+    conn.settimeout(0.1)
     # 连接服务器
     conn.connect((urlSplit[0], port))
 
