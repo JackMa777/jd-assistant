@@ -1594,6 +1594,7 @@ class Assistant(object):
         }
 
         br.openGetUrl('https://t.jd.com/home/follow', headers)
+        # print(br.page().profile().defaultProfile().httpUserAgent())
 
         def jsCallback(data):
             # print(data)
