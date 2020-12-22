@@ -2,7 +2,7 @@ import socket
 import ssl
 
 
-def SocketClient(url, method='GET', params=None, headers=None, resFunc=None):
+def send_request_by_socket(url, method='GET', params=None, headers=None, resFunc=None):
     conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # 默认添加请求头
     if headers == None:
@@ -24,7 +24,7 @@ def SocketClient(url, method='GET', params=None, headers=None, resFunc=None):
     # 发送报文处理
     # TODO 处理method
     # TODO 处理params数据
-    bMsg = f'GET /{urlSplit[1]} HTTP/1.1\r\nHost: {urlSplit[0]}\r\n{headers}\r\nConnection: close\r\n\r\n'
+    bMsg = f'{method} /{urlSplit[1]} HTTP/1.1\r\nHost: {urlSplit[0]}\r\n{headers}\r\nConnection: close\r\n\r\n'
 
     # 发送报文
     conn.send(bMsg.encode())
