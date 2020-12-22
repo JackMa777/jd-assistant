@@ -16,6 +16,7 @@ from config import global_config
 from exception import AsstException
 from log import logger
 from messenger import Messenger
+from socket_util import SocketClient
 from timer import Timer
 from util import (
     DEFAULT_TIMEOUT,
@@ -1489,8 +1490,23 @@ class Assistant(object):
         }
         if fast_mode and is_risk_control is False:
             def add_cart_request(params):
-                # TODO 使用socket模拟https并截断响应
-                pass
+                # 使用socket模拟https并截断响应
+                def resFunc(conn):
+                    html = ''
+                    charset = 'utf-8'
+                    # 循环接收html字节数据
+                    while True:
+                        data = conn.recv(1024)
+                        if data:
+                            try:
+                                html += data.decode(charset)
+                            except Exception as e:
+                                pass
+                        else:
+                            conn.close()
+                            break
+                    print(html)
+                SocketClient(url='https://cart.jd.com/gate.action', method='POST', params=None, headers=None, resFunc=resFunc)
         else:
             def add_cart_request(params):
                 return self.sess.get(url='https://cart.jd.com/gate.action', params=params, headers=add_cart_request_headers,
