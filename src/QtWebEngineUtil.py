@@ -89,7 +89,7 @@ class CustomBrowser(QWebEngineView):
         else:
             # 超时
             timer.stop()
-            print('请求超时：' + self.url())
+            print('页面请求超时')
         self.app.exec_()
 
     def quit(self):
