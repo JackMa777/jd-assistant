@@ -1536,20 +1536,19 @@ class Assistant(object):
         if fast_mode:
             def submit_order_request():
                 try:
-                    def resFunc(conn):
-                        # TODO 获取数据、解析
-                        while True:
-                            data = conn.recv(1)
-                            logger.info('下单请求已发送')
-                            break
+                    response_data = ssl_socket_client.send_http_request(
+                        url='https://trade.jd.com/shopping/order/submitOrder.action',
+                        method='POST',
+                        params=submit_order_request_data,
+                        headers=submit_order_request_headers,
+                        resFunc=None)
+                    ssl_socket_client.close()
+                    # TODO 解析数据
+                    if response_data:
+                        logger.info('下单请求已发送')
                         return True
-
-                    ssl_socket_client.send_http_request(url='https://trade.jd.com/shopping/order/submitOrder.action',
-                                                        method='POST',
-                                                        params=submit_order_request_data,
-                                                        headers=submit_order_request_headers,
-                                                        resFunc=resFunc)
-                    return False
+                    else:
+                        return False
                 except Exception as e:
                     logger.error(e)
                     return False

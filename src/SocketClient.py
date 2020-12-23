@@ -37,7 +37,7 @@ class SocketClient(socket.socket):
         url_split = url.split('/', 1)
         # 连接服务器
         self.connect((url_split[0], self.conn_port))
-        # 发送报文处理
+        # 处理报文
         # TODO 处理params数据
         # TODO 处理headers数据
         bMsg = f'{method} /{url_split[1]} HTTP/1.1\r\n' \
