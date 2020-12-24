@@ -26,12 +26,15 @@ class SocketClient(object):
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
         sock = self.sock
-        if headers:
-            # TODO 处理headers数据
-            pass
+        if isinstance(headers, dict):
+            headers_str = ''
+            for key, value in headers.items():
+                headers_str = headers_str.join(f'{key}: {value}\r\n')
+        elif isinstance(headers, str):
+            headers_str = headers
         else:
             # 默认添加请求头
-            headers = DEFAULT_HEADERS
+            headers_str = DEFAULT_HEADERS.join('\r\n')
         # http协议处理
         if 'http://' in url:
             if self.conn_port != SocketClient.HTTP:
@@ -51,20 +54,23 @@ class SocketClient(object):
             sock.connect((host, self.conn_port))
             self.connected_set.add(host)
         if params:
-            # TODO 处理params数据
-            uri = uri + '?' + params
-        else:
-            pass
+            if isinstance(params, dict):
+                params_str = ''
+                for key, value in params.items():
+                    params_str = params_str.join(f'&{key}={value}')
+                uri = uri.join(['?', params_str[1:]])
+            elif isinstance(params, str):
+                uri = uri.join(['?', params])
         # 处理报文
-        b_msg = f'{method} {uri} HTTP/1.1\r\n' \
-                f'Host: {host}\r\n' \
-                f'{headers}\r\n' \
-                'Connection: keep-alive\r\n\r\n'
+        b_msg = f'{method} {uri} HTTP/1.1\r\nHost: {host}\r\n{headers_str}Connection: keep-alive\r\n\r\n'
         if data:
-            # TODO 处理data数据
-            b_msg = b_msg + data
-        else:
-            pass
+            if isinstance(data, dict):
+                data_str = ''
+                for key, value in params.items():
+                    data_str = data_str.join(f'&{key}={value}')
+                b_msg = b_msg.join(data_str[1:])
+            elif isinstance(data, str):
+                b_msg = b_msg.join(data)
         # 发送报文
         sock.send(b_msg.encode())
 
