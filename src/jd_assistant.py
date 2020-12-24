@@ -1398,7 +1398,7 @@ class Assistant(object):
                 i = 0
                 while i < 3:
                     try:
-                        def resFunc(conn):
+                        def res_func(conn):
                             while True:
                                 data = conn.recv(1)
                                 logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
@@ -1406,7 +1406,7 @@ class Assistant(object):
 
                         ssl_socket_client.send_http_request(url='https://cart.jd.com/gate.action', method='GET',
                                                             params=params, headers=request_headers,
-                                                            resFunc=resFunc)
+                                                            res_func=res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1447,7 +1447,7 @@ class Assistant(object):
                 i = 0
                 while i < 3:
                     try:
-                        def resFunc(conn):
+                        def res_func(conn):
                             while True:
                                 data = conn.recv(1)
                                 logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
@@ -1455,7 +1455,7 @@ class Assistant(object):
 
                         ssl_socket_client.send_http_request(
                             url='http://trade.jd.com/shopping/order/getOrderInfo.action', method='GET', params=params,
-                            headers=request_headers, resFunc=resFunc)
+                            headers=request_headers, res_func=res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1541,8 +1541,8 @@ class Assistant(object):
                         method='POST',
                         params=submit_order_request_data,
                         headers=submit_order_request_headers,
-                        resFunc=None)
-                    ssl_socket_client.close()
+                        res_func=None)
+                    ssl_socket_client.close_client()
                     # TODO 解析数据
                     if response_data:
                         logger.info('下单请求已发送')
