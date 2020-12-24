@@ -20,6 +20,7 @@ class SocketClient(object):
         else:
             raise Exception("端口错误")
         self.sock = sock
+        self.connected_set = set()
         self.conn_port = conn_port
         self.sock.settimeout(timeout)
 
@@ -45,9 +46,10 @@ class SocketClient(object):
         url_split = url.split('/', 1)
         host = url_split[0]
         uri = '/' + url_split[1]
-        # TODO 修复复用连接
-        # 连接服务器
-        sock.connect((host, self.conn_port))
+        if host not in self.connected_set:
+            # 连接服务器
+            sock.connect((host, self.conn_port))
+            self.connected_set.add(host)
         if params:
             # TODO 处理params数据
             uri = uri + '?' + params
