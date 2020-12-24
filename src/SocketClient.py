@@ -26,11 +26,11 @@ class SocketClient(object):
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
         sock = self.sock
-        # 默认添加请求头
         if headers:
             # TODO 处理headers数据
             pass
         else:
+            # 默认添加请求头
             headers = DEFAULT_HEADERS
         # http协议处理
         if 'http://' in url:
@@ -60,8 +60,8 @@ class SocketClient(object):
                 f'Host: {host}\r\n' \
                 f'{headers}\r\n' \
                 'Connection: keep-alive\r\n\r\n'
-        # TODO 处理data数据
         if data:
+            # TODO 处理data数据
             b_msg = b_msg + data
         else:
             pass

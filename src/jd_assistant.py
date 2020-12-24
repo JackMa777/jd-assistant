@@ -1388,11 +1388,14 @@ class Assistant(object):
         if fast_mode:
             ssl_socket_client = SocketClient(443)
 
+        cookie_str = ''
+        for cookie in iter(self.sess.cookies):
+            cookie_str += f'{cookie.name}={cookie.value};'
         # 初始化添加购物车请求方法
-        request_headers = {
-            'User-Agent': self.user_agent,
-        }
+        add_cart_request_headers = self.headers.copy()
         if fast_mode:
+            add_cart_request_headers['cookie'] = cookie_str
+
             def add_cart_request(params):
                 # 使用socket模拟https并截断响应
                 i = 0
@@ -1405,7 +1408,7 @@ class Assistant(object):
                                 break
 
                         ssl_socket_client.send_http_request(url='https://cart.jd.com/gate.action', method='GET',
-                                                            params=params, headers=request_headers,
+                                                            headers=add_cart_request_headers, params=params,
                                                             res_func=res_func)
                         break
                     except Exception as e:
@@ -1416,8 +1419,9 @@ class Assistant(object):
                 i = 0
                 while i < 3:
                     try:
-                        resp = self.sess.get(url='https://cart.jd.com/gate.action', params=params,
-                                             headers=request_headers, timeout=(0.2, 0.03))
+                        resp = self.sess.get(url='https://cart.jd.com/gate.action',
+                                             headers=add_cart_request_headers, params=params,
+                                             timeout=(0.2, 0.03))
                         if 'https://cart.jd.com/cart.action' in resp.url:  # 套装商品加入购物车后直接跳转到购物车页面
                             result = True
                         else:  # 普通商品成功加入购物车后会跳转到提示 "商品已成功加入购物车！" 页面
@@ -1440,8 +1444,11 @@ class Assistant(object):
 
         self.request_info['add_cart_request'] = add_cart_request
 
+        get_checkout_page_request_headers = self.headers.copy()
         # 初始化订单结算页请求方法
         if fast_mode and is_risk_control is False:
+            get_checkout_page_request_headers['cookie'] = cookie_str
+
             def get_checkout_page_request(params):
                 # 使用socket模拟https并截断响应
                 i = 0
@@ -1454,8 +1461,8 @@ class Assistant(object):
                                 break
 
                         ssl_socket_client.send_http_request(
-                            url='http://trade.jd.com/shopping/order/getOrderInfo.action', method='GET', params=params,
-                            headers=request_headers, res_func=res_func)
+                            url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
+                            headers=get_checkout_page_request_headers, params=params, res_func=res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1466,8 +1473,9 @@ class Assistant(object):
                 while i < 3:
                     try:
                         # url = 'https://cart.jd.com/gotoOrder.action'
-                        resp = self.sess.get(url='http://trade.jd.com/shopping/order/getOrderInfo.action',
-                                             params=params, timeout=(0.2, 0.07))
+                        resp = self.sess.get(url='https://trade.jd.com/shopping/order/getOrderInfo.action',
+                                             headers=get_checkout_page_request_headers, params=params,
+                                             timeout=(0.2, 0.07))
                         if not response_status(resp):
                             logger.error('获取订单结算页信息失败')
                             return
@@ -1534,14 +1542,15 @@ class Assistant(object):
             submit_order_request_data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
 
         if fast_mode:
+            submit_order_request_headers['cookie'] = cookie_str
+
             def submit_order_request():
                 try:
                     response_data = ssl_socket_client.send_http_request(
                         url='https://trade.jd.com/shopping/order/submitOrder.action',
                         method='POST',
-                        params=submit_order_request_data,
                         headers=submit_order_request_headers,
-                        res_func=None)
+                        data=submit_order_request_data)
                     ssl_socket_client.close_client()
                     # TODO 解析数据
                     if response_data:
@@ -1557,7 +1566,7 @@ class Assistant(object):
                 try:
                     submit_order_request_data['riskControl'] = self.risk_control
                     resp = self.sess.post(url='https://trade.jd.com/shopping/order/submitOrder.action',
-                                          data=submit_order_request_data, headers=submit_order_request_headers)
+                                          headers=submit_order_request_headers, data=submit_order_request_data)
                     # 暂时不设置超时时间
                     # resp = self.sess.post(url=url, data=data, headers=headers, timeout=(0.1, 0.08))
                     resp_json = json.loads(resp.text)
