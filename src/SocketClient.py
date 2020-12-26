@@ -11,7 +11,7 @@ class SocketClient(object):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, conn_port=80, timeout=0.1):
+    def __init__(self, conn_port=80, timeout=0.3):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if conn_port == SocketClient.HTTP:
             pass
@@ -27,9 +27,10 @@ class SocketClient(object):
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
         sock = self.sock
         if isinstance(headers, dict):
-            headers_str = ''
+            headers_list = []
             for key, value in headers.items():
-                headers_str = headers_str.join(f'{key}: {value}\r\n')
+                headers_list.append(f'{key}: {value}\r\n')
+            headers_str = ''.join(headers_list)
         elif isinstance(headers, str):
             headers_str = headers
         else:
@@ -48,34 +49,46 @@ class SocketClient(object):
         url = url if '/' in url else url + '/'
         url_split = url.split('/', 1)
         host = url_split[0]
-        uri = '/' + url_split[1]
-        if host not in self.connected_set:
+        host_split = host.split('.')
+        domain = '.'.join(host_split[len(host_split) - 2:])
+        uri_list = ['/', url_split[1]]
+        if params:
+            uri_list.append('?')
+            if isinstance(params, dict):
+                params_list = []
+                for key, value in params.items():
+                    params_list.append(f'&{key}={value}')
+                uri_list.append(''.join(params_list)[1:])
+            elif isinstance(params, str):
+                uri_list.append(params)
+        # 处理报文
+        b_msg_list = [f'{method} {"".join(uri_list)} HTTP/1.1\r\nHost: {host}\r\n']
+        if data:
+            data_str = None
+            if isinstance(data, dict):
+                data_list = []
+                for key, value in data.items():
+                    data_list.append(f'&{key}={value}')
+                data_str = ''.join(data_list)[1:]
+                headers_str = f'{headers_str}Content-Type: application/x-www-form-urlencoded;charset=UTF-8\r\n'
+            elif isinstance(data, str):
+                data_str = data
+                headers_str = f'{headers_str}Content-Type: application/json;charset=UTF-8\r\n'
+            b_msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
+            if data_str is not None:
+                b_msg_list.append(data_str)
+        else:
+            b_msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
+        if domain not in self.connected_set:
             # 连接服务器
             sock.connect((host, self.conn_port))
-            self.connected_set.add(host)
-        if params:
-            if isinstance(params, dict):
-                params_str = ''
-                for key, value in params.items():
-                    params_str = params_str.join(f'&{key}={value}')
-                uri = uri.join(['?', params_str[1:]])
-            elif isinstance(params, str):
-                uri = uri.join(['?', params])
-        # 处理报文
-        b_msg = f'{method} {uri} HTTP/1.1\r\nHost: {host}\r\n{headers_str}Connection: keep-alive\r\n\r\n'
-        if data:
-            if isinstance(data, dict):
-                data_str = ''
-                for key, value in params.items():
-                    data_str = data_str.join(f'&{key}={value}')
-                b_msg = b_msg.join(data_str[1:])
-            elif isinstance(data, str):
-                b_msg = b_msg.join(data)
+            self.connected_set.add(domain)
         # 发送报文
-        sock.send(b_msg.encode())
+        # print(''.join(b_msg_list))
+        sock.send(''.join(b_msg_list).encode())
 
         if res_func:
-            res_func(self)
+            res_func(self.sock)
         else:
             # TODO 解析页面
             html = ''

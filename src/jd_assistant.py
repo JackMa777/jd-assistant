@@ -1555,6 +1555,7 @@ class Assistant(object):
                     # TODO 解析数据
                     if response_data:
                         logger.info('下单请求已发送')
+                        # print(response_data)
                         return True
                     else:
                         return False
@@ -1648,7 +1649,7 @@ class Assistant(object):
             function getObj(){ var obj = {eid: '', fp: '', trackId: ''}, count = 0; for(var count=0;count<3;count++) { getJdEid(function (eid, fp, udfp) { var trackId = getCookie("TrackID"); if(eid && fp && trackId){ obj.eid = eid; obj.fp = fp; obj.trackId = trackId; return obj; } else { count++; sleep(500) } }); } return obj; };
             getObj()
             ''', jsCallback)
-        time.sleep(0.5)
+        time.sleep(0.2)
         br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
 
         # 关闭浏览器
