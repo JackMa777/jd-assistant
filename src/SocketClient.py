@@ -62,30 +62,36 @@ class SocketClient(object):
             elif isinstance(params, str):
                 uri_list.append(params)
         # 处理报文
-        b_msg_list = [f'{method} {"".join(uri_list)} HTTP/1.1\r\nHost: {host}\r\n']
+        b_msg_array = bytearray()
+        msg_list = [f'{method} {"".join(uri_list)} HTTP/1.1\r\nHost: {host}\r\n']
         if data:
-            data_str = None
+            content_len = 0
+            data_bytes = None
             if isinstance(data, dict):
                 data_list = []
                 for key, value in data.items():
                     data_list.append(f'&{key}={value}')
-                data_str = ''.join(data_list)[1:]
+                data_bytes = ''.join(data_list)[1:].encode()
                 headers_str = f'{headers_str}Content-Type: application/x-www-form-urlencoded;charset=UTF-8\r\n'
             elif isinstance(data, str):
-                data_str = data
+                data_bytes = data.encode()
                 headers_str = f'{headers_str}Content-Type: application/json;charset=UTF-8\r\n'
-            b_msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
-            if data_str is not None:
-                b_msg_list.append(data_str)
+            if data_bytes is not None:
+                content_len = len(data_bytes)
+            msg_list.append(f'{headers_str}Content-Length: {content_len}\r\nConnection: keep-alive\r\n\r\n')
+            b_msg_array.extend(''.join(msg_list).encode())
+            if content_len != 0:
+                b_msg_array.extend(data_bytes)
         else:
-            b_msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
+            msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
+            b_msg_array.extend(''.join(msg_list).encode())
         if domain not in self.connected_set:
             # 连接服务器
             sock.connect((host, self.conn_port))
             self.connected_set.add(domain)
         # 发送报文
-        # print(''.join(b_msg_list))
-        sock.send(''.join(b_msg_list).encode())
+        # print(b_msg_array)
+        sock.send(bytes(b_msg_array))
 
         if res_func:
             res_func(self.sock)

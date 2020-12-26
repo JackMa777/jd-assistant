@@ -1545,6 +1545,7 @@ class Assistant(object):
             submit_order_request_headers['cookie'] = cookie_str
 
             def submit_order_request():
+                submit_order_request_data['riskControl'] = self.risk_control
                 try:
                     response_data = ssl_socket_client.send_http_request(
                         url='https://trade.jd.com/shopping/order/submitOrder.action',
