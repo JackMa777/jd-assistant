@@ -52,8 +52,8 @@ class Timer(object):
 
         sys = platform.system()
         if sys == "Windows":
-            import win_utils
-            win_utils.setWinSystemTime(dt)
+            import win_util
+            win_util.setWinSystemTime(dt)
         elif sys == "Linux":
             try:
                 os.system(f'date -s "{dt.strftime("%Y-%m-%d %H:%M:%S.%f000")}"')

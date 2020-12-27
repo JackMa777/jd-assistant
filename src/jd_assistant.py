@@ -11,7 +11,9 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-import QtWebEngineUtil
+import QtWebEngine
+import address_util
+from SocketClient import SocketClient
 from config import global_config
 from exception import AsstException
 from log import logger
@@ -39,7 +41,8 @@ from util import (
 
 class Assistant(object):
 
-    def __init__(self):
+    def __init__(self, ):
+        self.config = None
         use_random_ua = global_config.getboolean('config', 'random_useragent')
         self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
         self.headers = {'User-Agent': self.user_agent}
@@ -358,7 +361,7 @@ class Assistant(object):
             self.nick_name = self.get_user_info()
             self._save_cookies()
 
-        # 初始化下单必须的参数
+        # 获取下单必须参数
         self.init_order_request_info()
 
     def _get_reserve_url(self, sku_id):
@@ -644,17 +647,7 @@ class Assistant(object):
         :return:
         """
 
-        request_info = self.request_info['add_cart_request']
-        if not request_info:
-            url = 'https://cart.jd.com/gate.action'
-            headers = {
-                'User-Agent': self.user_agent,
-            }
-            timeout = (0.2, 0.025)
-        else:
-            url = request_info['url']
-            headers = request_info['headers']
-            timeout = request_info['timeout']
+        add_cart_request = self.request_info['add_cart_request']
 
         for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
             payload = {
@@ -662,30 +655,7 @@ class Assistant(object):
                 'pcount': count,
                 'ptype': 1,
             }
-
-            i = 0
-            while i < 3:
-                try:
-                    resp = self.sess.get(url=url, params=payload, headers=headers, timeout=timeout)
-                    if 'https://cart.jd.com/cart.action' in resp.url:  # 套装商品加入购物车后直接跳转到购物车页面
-                        result = True
-                    else:  # 普通商品成功加入购物车后会跳转到提示 "商品已成功加入购物车！" 页面
-                        soup = BeautifulSoup(resp.text, "html.parser")
-                        result = bool(soup.select('h3.ftx-02'))  # [<h3 class="ftx-02">商品已成功加入购物车！</h3>]
-
-                    if result:
-                        logger.info('%s x %s 已成功加入购物车', sku_id, count)
-                        break
-                    else:
-                        i += 1
-                        logger.error('%s 添加到购物车失败，开始第 %s 次重试', sku_id, i)
-                        logger.error('响应数据：%s', resp)
-                except requests.exceptions.ConnectTimeout as e:
-                    i += 1
-                    logger.error('%s 添加到购物车请求发送超时，开始第 %s 次重试', sku_id, i)
-                except requests.exceptions.ReadTimeout as e:
-                    logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
-                    break
+            add_cart_request(payload)
 
     @check_login
     def clear_cart(self):
@@ -834,59 +804,13 @@ class Assistant(object):
         :return: 结算信息 dict
         """
 
-        request_info = self.request_info['get_checkout_page_request']
-        if not request_info:
-            url = 'http://trade.jd.com/shopping/order/getOrderInfo.action'
-            # url = 'https://cart.jd.com/gotoOrder.action'
-            timeout = (0.2, 0.06)
-        else:
-            url = request_info['url']
-            timeout = request_info['timeout']
+        get_checkout_page_request = self.request_info['get_checkout_page_request']
 
         payload = {
             'rid': str(int(time.time() * 1000)),
         }
 
-        i = 0
-        while i < 3:
-            try:
-                resp = self.sess.get(url=url, params=payload, timeout=timeout)
-                if not response_status(resp):
-                    logger.error('获取订单结算页信息失败')
-                    return
-
-                soup = BeautifulSoup(resp.text, "html.parser")
-                self.risk_control = get_tag_value(soup.select('input#riskControl'), 'value')
-
-                # order_detail = {
-                #     'address': soup.find('span', id='sendAddr').text[5:],  # remove '寄送至： ' from the begin
-                #     'receiver': soup.find('span', id='sendMobile').text[4:],  # remove '收件人:' from the begin
-                #     'total_price': soup.find('span', id='sumPayPriceId').text[1:],  # remove '￥' from the begin
-                #     'items': []
-                # }
-                # TODO: 这里可能会产生解析问题，待修复
-                # for item in soup.select('div.goods-list div.goods-items'):
-                #     div_tag = item.select('div.p-price')[0]
-                #     order_detail.get('items').append({
-                #         'name': get_tag_value(item.select('div.p-name a')),
-                #         'price': get_tag_value(div_tag.select('strong.jd-price'))[2:],  # remove '￥ ' from the begin
-                #         'num': get_tag_value(div_tag.select('span.p-num'))[1:],  # remove 'x' from the begin
-                #         'state': get_tag_value(div_tag.select('span.p-state'))  # in stock or out of stock
-                #     })
-
-                # logger.info("下单信息：%s", order_detail)
-                # return order_detail
-                return
-            except requests.exceptions.ConnectTimeout as e:
-                i += 1
-                logger.error('订单结算页面数据连接超时，开始第 %s 次重试', i)
-            except requests.exceptions.ReadTimeout as e:
-                logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
-                break
-            except Exception as e:
-                logger.error('订单结算页面数据解析异常（可以忽略），报错信息：%s', e)
-                logger.error('resp.text：%s', resp.text)
-                break
+        get_checkout_page_request(payload)
 
     def _save_invoice(self):
         """下单第三方商品时如果未设置发票，将从电子发票切换为普通发票
@@ -951,81 +875,9 @@ class Assistant(object):
 
         :return: True/False 订单提交结果
         """
-        request_info = self.request_info['submit_order_request']
-        if not request_info:
-            url = 'https://trade.jd.com/shopping/order/submitOrder.action'
-            # js function of submit order is included in https://trade.jd.com/shopping/misc/js/order.js?r=2018070403091
+        submit_order_request = self.request_info['submit_order_request']
 
-            data = {
-                'overseaPurchaseCookies': '',
-                'vendorRemarks': '[]',
-                'submitOrderParam.sopNotPutInvoice': 'false',
-                'submitOrderParam.trackID': 'TestTrackId',
-                'submitOrderParam.ignorePriceChange': '0',
-                'submitOrderParam.btSupport': '0',
-                'riskControl': self.risk_control,
-                'submitOrderParam.isBestCoupon': 1,
-                'submitOrderParam.jxj': 1,
-                'submitOrderParam.trackId': self.track_id,  # Todo: need to get trackId
-                'submitOrderParam.eid': self.eid,
-                'submitOrderParam.fp': self.fp,
-                'submitOrderParam.needCheck': 1,
-            }
-
-            # add payment password when necessary
-            payment_pwd = global_config.get('account', 'payment_pwd')
-            if payment_pwd:
-                data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
-
-            headers = {
-                'User-Agent': self.user_agent,
-                'Host': 'trade.jd.com',
-                'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            }
-        else:
-            url = request_info['url']
-            data = request_info['data']
-            data['riskControl'] = self.risk_control
-            headers = request_info['headers']
-
-        try:
-            resp = self.sess.post(url=url, data=data, headers=headers)
-            # 暂时不设置超时时间
-            # resp = self.sess.post(url=url, data=data, headers=headers, timeout=(0.1, 0.08))
-            resp_json = json.loads(resp.text)
-
-            # 返回信息示例：
-            # 下单失败
-            # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 60123, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': '请输入支付密码！'}
-            # {'overSea': False, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'orderXml': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 60017, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': '您多次提交过快，请稍后再试'}
-            # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 60077, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': '获取用户订单信息失败'}
-            # {"cartXml":null,"noStockSkuIds":"xxx","reqInfo":null,"hasJxj":false,"addedServiceList":null,"overSea":false,"orderXml":null,"sign":null,"pin":"xxx","needCheckCode":false,"success":false,"resultCode":600157,"orderId":0,"submitSkuNum":0,"deductMoneyFlag":0,"goJumpOrderCenter":false,"payInfo":null,"scaleSkuInfoListVO":null,"purchaseSkuInfoListVO":null,"noSupportHomeServiceSkuList":null,"msgMobile":null,"addressVO":{"pin":"xxx","areaName":"","provinceId":xx,"cityId":xx,"countyId":xx,"townId":xx,"paymentId":0,"selected":false,"addressDetail":"xx","mobile":"xx","idCard":"","phone":null,"email":null,"selfPickMobile":null,"selfPickPhone":null,"provinceName":null,"cityName":null,"countyName":null,"townName":null,"giftSenderConsigneeName":null,"giftSenderConsigneeMobile":null,"gcLat":0.0,"gcLng":0.0,"coord_type":0,"longitude":0.0,"latitude":0.0,"selfPickOptimize":0,"consigneeId":0,"selectedAddressType":0,"siteType":0,"helpMessage":null,"tipInfo":null,"cabinetAvailable":true,"limitKeyword":0,"specialRemark":null,"siteProvinceId":0,"siteCityId":0,"siteCountyId":0,"siteTownId":0,"skuSupported":false,"addressSupported":0,"isCod":0,"consigneeName":null,"pickVOname":null,"shipmentType":0,"retTag":0,"tagSource":0,"userDefinedTag":null,"newProvinceId":0,"newCityId":0,"newCountyId":0,"newTownId":0,"newProvinceName":null,"newCityName":null,"newCountyName":null,"newTownName":null,"checkLevel":0,"optimizePickID":0,"pickType":0,"dataSign":0,"overseas":0,"areaCode":null,"nameCode":null,"appSelfPickAddress":0,"associatePickId":0,"associateAddressId":0,"appId":null,"encryptText":null,"certNum":null,"used":false,"oldAddress":false,"mapping":false,"addressType":0,"fullAddress":"xxxx","postCode":null,"addressDefault":false,"addressName":null,"selfPickAddressShuntFlag":0,"pickId":0,"pickName":null,"pickVOselected":false,"mapUrl":null,"branchId":0,"canSelected":false,"address":null,"name":"xxx","message":null,"id":0},"msgUuid":null,"message":"xxxxxx商品无货"}
-            # {'orderXml': None, 'overSea': False, 'noStockSkuIds': 'xxx', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'cartXml': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 600158, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': {'oldAddress': False, 'mapping': False, 'pin': 'xxx', 'areaName': '', 'provinceId': xx, 'cityId': xx, 'countyId': xx, 'townId': xx, 'paymentId': 0, 'selected': False, 'addressDetail': 'xxxx', 'mobile': 'xxxx', 'idCard': '', 'phone': None, 'email': None, 'selfPickMobile': None, 'selfPickPhone': None, 'provinceName': None, 'cityName': None, 'countyName': None, 'townName': None, 'giftSenderConsigneeName': None, 'giftSenderConsigneeMobile': None, 'gcLat': 0.0, 'gcLng': 0.0, 'coord_type': 0, 'longitude': 0.0, 'latitude': 0.0, 'selfPickOptimize': 0, 'consigneeId': 0, 'selectedAddressType': 0, 'newCityName': None, 'newCountyName': None, 'newTownName': None, 'checkLevel': 0, 'optimizePickID': 0, 'pickType': 0, 'dataSign': 0, 'overseas': 0, 'areaCode': None, 'nameCode': None, 'appSelfPickAddress': 0, 'associatePickId': 0, 'associateAddressId': 0, 'appId': None, 'encryptText': None, 'certNum': None, 'addressType': 0, 'fullAddress': 'xxxx', 'postCode': None, 'addressDefault': False, 'addressName': None, 'selfPickAddressShuntFlag': 0, 'pickId': 0, 'pickName': None, 'pickVOselected': False, 'mapUrl': None, 'branchId': 0, 'canSelected': False, 'siteType': 0, 'helpMessage': None, 'tipInfo': None, 'cabinetAvailable': True, 'limitKeyword': 0, 'specialRemark': None, 'siteProvinceId': 0, 'siteCityId': 0, 'siteCountyId': 0, 'siteTownId': 0, 'skuSupported': False, 'addressSupported': 0, 'isCod': 0, 'consigneeName': None, 'pickVOname': None, 'shipmentType': 0, 'retTag': 0, 'tagSource': 0, 'userDefinedTag': None, 'newProvinceId': 0, 'newCityId': 0, 'newCountyId': 0, 'newTownId': 0, 'newProvinceName': None, 'used': False, 'address': None, 'name': 'xx', 'message': None, 'id': 0}, 'msgUuid': None, 'message': 'xxxxxx商品无货'}
-            # 下单成功
-            # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': True, 'resultCode': 0, 'orderId': 8740xxxxx, 'submitSkuNum': 1, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': None}
-
-            if resp_json.get('success'):
-                order_id = resp_json.get('orderId')
-                logger.info('订单提交成功! 订单号：%s', order_id)
-                if self.send_message:
-                    self.messenger.send(text='jd-assistant 订单提交成功', desp='订单号：%s' % order_id)
-                return True
-            else:
-                message, result_code = resp_json.get('message'), resp_json.get('resultCode')
-                if result_code == 0:
-                    message = message + '(下单失败)'
-                    # self._save_invoice()
-                    # message = message + '(下单商品可能为第三方商品，将切换为普通发票进行尝试)'
-                elif result_code == 60077:
-                    message = message + '(可能是购物车为空 或 未勾选购物车中商品)'
-                elif result_code == 60123:
-                    message = message + '(需要在config.ini文件中配置支付密码)'
-                logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
-                logger.info(resp_json)
-                return False
-        except Exception as e:
-            logger.error(e)
-            return False
+        return submit_order_request()
 
     @check_login
     def submit_order_with_retry(self, retry=3, interval=4):
@@ -1425,8 +1277,7 @@ class Assistant(object):
             self.exec_seckill(sku_id, server_buy_time, retry, interval, num, fast_mode)
 
     @check_login
-    def exec_reserve_seckill_by_time(self, sku_id, buy_time=None, retry=4, interval=4, num=1, is_pass_cart=False,
-                                     sleep_interval=0.5, fast_sleep_interval=0.01):
+    def exec_reserve_seckill_by_time(self, config):
         """定时抢购`预约抢购商品`
 
         一定要确保预约的商品在购物车中才能使用这种方式！！！否则只能用其他方式
@@ -1447,35 +1298,27 @@ class Assistant(object):
         :return:
         """
 
-        if buy_time is None:
+        if not config:
+            raise AsstException('初始化配置为空！')
+
+        self.config = config
+
+        if config.buy_time is None:
             exit(-1)
 
         # 开抢前清空购物车
         self.clear_cart()
 
         # 提前初始化请求信息
-        self.init_request_info()
+        self.init_request_method(config.fast_mode, config.is_risk_control)
 
-        logger.info('准备抢购商品id为：%s', sku_id)
+        logger.info('准备抢购商品id为：%s', config.sku_id)
 
-        t = Timer(buy_time=buy_time, sleep_interval=sleep_interval, fast_sleep_interval=fast_sleep_interval)
+        t = Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
+                  fast_sleep_interval=config.fast_sleep_interval)
         t.start()
 
-        if is_pass_cart is not True:
-            self.add_item_to_cart(sku_ids={sku_id: num})
-            # gevent.joinall([gevent.spawn(self.add_item_to_cart(sku_ids={sku_id: num}))])
-
-        # 获取订单结算页面信息（后台可能会自动勾选默认地址）
-        self.get_checkout_page_detail()
-
-        for count in range(1, retry + 1):
-            logger.info('第[%s/%s]次尝试提交订单', count, retry)
-            if self.submit_order():
-                break
-            logger.info('休息%ss', interval)
-            time.sleep(interval)
-        else:
-            logger.info('执行结束，提交订单失败！')
+        self.start_seckill_now(config)
 
     @check_login
     def buy_item_in_stock(self, sku_ids, area, wait_all=False, stock_interval=3, submit_retry=3, submit_interval=5):
@@ -1523,71 +1366,18 @@ class Assistant(object):
 
                 time.sleep(stock_interval)
 
-    def init_request_info(self):
-        # 提前初始化请求信息
-
-        # 初始化添加购物车请求信息
-        self.request_info['add_cart_request'] = {
-            'url': 'https://cart.jd.com/gate.action',
-            'headers': {
-                'User-Agent': self.user_agent
-            },
-            'timeout': (0.2, 0.025)
-        }
-
-        # 初始化订单结算页请求信息
-        self.request_info['get_checkout_page_request'] = {
-            'url': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
-            'timeout': (0.2, 0.07)
-        }
-
-        # 初始化提交订单请求信息
-        data = {
-            'overseaPurchaseCookies': '',
-            'vendorRemarks': '[]',
-            'submitOrderParam.sopNotPutInvoice': 'false',
-            'submitOrderParam.trackID': 'TestTrackId',
-            'submitOrderParam.ignorePriceChange': '0',
-            'submitOrderParam.btSupport': '0',
-            'riskControl': self.risk_control,
-            'submitOrderParam.isBestCoupon': 1,
-            'submitOrderParam.jxj': 1,
-            'submitOrderParam.trackId': self.track_id,  # Todo: need to get trackId
-            'submitOrderParam.eid': self.eid,
-            'submitOrderParam.fp': self.fp,
-            'submitOrderParam.needCheck': 1
-        }
-        # 如果有密码则设置
-        payment_pwd = global_config.get('account', 'payment_pwd')
-        if payment_pwd:
-            data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
-        self.request_info['submit_order_request'] = {
-            'url': 'https://trade.jd.com/shopping/order/submitOrder.action',
-            'data': data,
-            'headers': {
-                'User-Agent': self.user_agent,
-                'Host': 'trade.jd.com',
-                'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action'
-            }
-        }
-
     def init_order_request_info(self):
-        # 初始化下单必须参数：eid、fp、track_id、risk_control（默认为空）
-        # TODO
-        eid = ''
-        fp = ''
-        track_id = ''
-        risk_control = ''
-        tdjs = ''
-        # resp = self.sess.get(url='https://payrisk.jd.com/js/td.js', headers=headers)
-        # if not resp.text:
-        #     tdjs = open('../js/td.js', 'r', encoding='utf8').read()
-        # else:
-        #     tdjs = resp.text
-        # tdjs_data = execjs.eval(tdjs)
+        # 获取下单必须参数
+
+        # 获取：ipLoc-djd、ipLocation
+        if address_util.get_user_address(self) is not True:
+            logger.error('获取地址信息失败，请重试！')
+            exit(-1)
+
+        # 获取：eid、fp、track_id、risk_control（默认为空）
 
         # 启动浏览器
-        br = QtWebEngineUtil.CustomBrowser(self.sess.cookies, self.user_agent)
+        br = QtWebEngine.CustomBrowser(self.sess.cookies, self.user_agent)
 
         headers = {
             # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
@@ -1604,6 +1394,8 @@ class Assistant(object):
 
         br.openGetUrl('https://t.jd.com/home/follow', headers)
 
+        # print(br.page().profile().defaultProfile().httpUserAgent())
+
         def jsCallback(data):
             # print(data)
             eid = data['eid']
@@ -1618,32 +1410,274 @@ class Assistant(object):
             if eid and fp and track_id:
                 logger.info('自动初始化下单参数成功！')
 
-        jsFunc = QtWebEngineUtil.JsScript('''
+        jsFunc = QtWebEngine.JsScript('''
             function getCookie(name){ var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)"); if(arr=document.cookie.match(reg)){ return unescape(arr[2]); } else{ return null;} };
             function getObj(){ var obj = {eid: '', fp: '', trackId: ''}, count = 0; for(var count=0;count<3;count++) { getJdEid(function (eid, fp, udfp) { var trackId = getCookie("TrackID"); if(eid && fp && trackId){ obj.eid = eid; obj.fp = fp; obj.trackId = trackId; return obj; } else { count++; sleep(500) } }); } return obj; };
             getObj()
             ''', jsCallback)
-        time.sleep(0.5)
+        time.sleep(0.2)
         br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
-        # chrome_options = webdriver.ChromeOptions()
-        # chrome_options.add_argument('--headless')
-        # chrome_options.add_argument('--disable-gpu')
-        # client = webdriver.Chrome(chrome_options=chrome_options, executable_path='chromedriver.exe',
-        #                           service_log_path='--log-path=webdriver/chromedriver.log')
-        # client.add_cookie(cookies)
-        # # 如果没有把chromedriver加入到PATH中,就需要指明路径 executable_path='/home/chromedriver'
-        #
-        # client.get("https://www.aliyun.com/jiaocheng/124644.html")
-        # content = client.page_source
-        # print(content)
-        # client.quit()
-
-        # self.eid = eid
-        # self.fp = fp
 
         # 关闭浏览器
         br.quit()
-        # self.track_id = requests.utils.dict_from_cookiejar(cookies)['TrackID']
-        # self.risk_control = risk_control
         if not self.eid or not self.fp or not self.track_id:
             raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+
+    def init_request_method(self, fast_mode, is_risk_control):
+        # 提前初始化请求信息
+
+        if fast_mode:
+            ssl_socket_client = SocketClient(443)
+
+        cookie_str = ''
+        for cookie in iter(self.sess.cookies):
+            cookie_str += f'{cookie.name}={cookie.value};'
+        # 初始化添加购物车请求方法
+        add_cart_request_headers = self.headers.copy()
+        if fast_mode:
+            add_cart_request_headers['cookie'] = cookie_str
+
+            def add_cart_request(params):
+                # 使用socket模拟https并截断响应
+                i = 0
+                while i < 3:
+                    try:
+                        def res_func(conn):
+                            while True:
+                                data = conn.recv(1)
+                                logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
+                                break
+
+                        ssl_socket_client.send_http_request(url='https://cart.jd.com/gate.action', method='GET',
+                                                            headers=add_cart_request_headers, params=params,
+                                                            res_func=res_func)
+                        break
+                    except Exception as e:
+                        i += 1
+                        logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
+        else:
+            def add_cart_request(params):
+                i = 0
+                while i < 3:
+                    try:
+                        resp = self.sess.get(url='https://cart.jd.com/gate.action',
+                                             headers=add_cart_request_headers, params=params,
+                                             timeout=(0.2, 0.03))
+                        if 'https://cart.jd.com/cart.action' in resp.url:  # 套装商品加入购物车后直接跳转到购物车页面
+                            result = True
+                        else:  # 普通商品成功加入购物车后会跳转到提示 "商品已成功加入购物车！" 页面
+                            soup = BeautifulSoup(resp.text, "html.parser")
+                            result = bool(soup.select('h3.ftx-02'))  # [<h3 class="ftx-02">商品已成功加入购物车！</h3>]
+
+                        if result:
+                            logger.info('%s 已成功加入购物车', params['pid'])
+                            break
+                        else:
+                            i += 1
+                            logger.error('%s 添加购物车失败，开始第 %s 次重试', params['pid'], i)
+                            logger.error('响应数据：%s', resp)
+                    except requests.exceptions.ConnectTimeout as e:
+                        i += 1
+                        logger.error('%s 添加购物车请求发送超时，开始第 %s 次重试', params['pid'], i)
+                    except requests.exceptions.ReadTimeout as e:
+                        logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
+                        break
+
+        self.request_info['add_cart_request'] = add_cart_request
+
+        get_checkout_page_request_headers = self.headers.copy()
+        # 初始化订单结算页请求方法
+        if fast_mode and is_risk_control is False:
+            get_checkout_page_request_headers['cookie'] = cookie_str
+
+            def get_checkout_page_request(params):
+                # 使用socket模拟https并截断响应
+                i = 0
+                while i < 3:
+                    try:
+                        def res_func(conn):
+                            while True:
+                                data = conn.recv(1)
+                                logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
+                                break
+
+                        ssl_socket_client.send_http_request(
+                            url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
+                            headers=get_checkout_page_request_headers, params=params, res_func=res_func)
+                        break
+                    except Exception as e:
+                        i += 1
+                        logger.error('订单结算页面数据连接超时，开始第 %s 次重试，信息：%s', i, e)
+        else:
+            def get_checkout_page_request(params):
+                i = 0
+                while i < 3:
+                    try:
+                        # url = 'https://cart.jd.com/gotoOrder.action'
+                        resp = self.sess.get(url='https://trade.jd.com/shopping/order/getOrderInfo.action',
+                                             headers=get_checkout_page_request_headers, params=params,
+                                             timeout=(0.2, 0.07))
+                        if not response_status(resp):
+                            logger.error('获取订单结算页信息失败')
+                            return
+
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        self.risk_control = get_tag_value(soup.select('input#riskControl'), 'value')
+
+                        # order_detail = {
+                        #     'address': soup.find('span', id='sendAddr').text[5:],  # remove '寄送至： ' from the begin
+                        #     'receiver': soup.find('span', id='sendMobile').text[4:],  # remove '收件人:' from the begin
+                        #     'total_price': soup.find('span', id='sumPayPriceId').text[1:],  # remove '￥' from the begin
+                        #     'items': []
+                        # }
+                        # TODO: 这里可能会产生解析问题，待修复
+                        # for item in soup.select('div.goods-list div.goods-items'):
+                        #     div_tag = item.select('div.p-price')[0]
+                        #     order_detail.get('items').append({
+                        #         'name': get_tag_value(item.select('div.p-name a')),
+                        #         'price': get_tag_value(div_tag.select('strong.jd-price'))[2:],  # remove '￥ ' from the begin
+                        #         'num': get_tag_value(div_tag.select('span.p-num'))[1:],  # remove 'x' from the begin
+                        #         'state': get_tag_value(div_tag.select('span.p-state'))  # in stock or out of stock
+                        #     })
+
+                        # logger.info("下单信息：%s", order_detail)
+                        # return order_detail
+                        return
+                    except requests.exceptions.ConnectTimeout as e:
+                        i += 1
+                        logger.error('订单结算页面数据连接超时，开始第 %s 次重试', i)
+                    except requests.exceptions.ReadTimeout as e:
+                        logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
+                        break
+                    except Exception as e:
+                        logger.error('订单结算页面数据解析异常（可以忽略），报错信息：%s', e)
+                        logger.error('resp.text：%s', resp.text)
+                        break
+
+        self.request_info['get_checkout_page_request'] = get_checkout_page_request
+
+        # 初始化提交订单请求方法
+        submit_order_request_data = {
+            'overseaPurchaseCookies': '',
+            'vendorRemarks': '[]',
+            'submitOrderParam.sopNotPutInvoice': 'false',
+            'submitOrderParam.trackID': 'TestTrackId',
+            'submitOrderParam.ignorePriceChange': '0',
+            'submitOrderParam.btSupport': '0',
+            'riskControl': self.risk_control,
+            'submitOrderParam.isBestCoupon': 1,
+            'submitOrderParam.jxj': 1,
+            'submitOrderParam.trackId': self.track_id,  # Todo: need to get trackId
+            'submitOrderParam.eid': self.eid,
+            'submitOrderParam.fp': self.fp,
+            'submitOrderParam.needCheck': 1
+        }
+        submit_order_request_headers = {
+            'User-Agent': self.user_agent,
+            'Host': 'trade.jd.com',
+            'Referer': 'https://trade.jd.com/shopping/order/getOrderInfo.action'
+        }
+        # 如果有密码则设置
+        payment_pwd = global_config.get('account', 'payment_pwd')
+        if payment_pwd:
+            submit_order_request_data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
+
+        if fast_mode:
+            submit_order_request_headers['cookie'] = cookie_str
+
+            def submit_order_request():
+                submit_order_request_data['riskControl'] = self.risk_control
+                try:
+                    response_data = ssl_socket_client.send_http_request(
+                        url='https://trade.jd.com/shopping/order/submitOrder.action',
+                        method='POST',
+                        headers=submit_order_request_headers,
+                        data=submit_order_request_data)
+                    # TODO 解析数据
+                    if response_data:
+                        logger.info('下单请求已提交，请去待付款页面检查是否抢购成功')
+                        # print(response_data)
+                        return True
+                    else:
+                        logger.info('下单请求异常')
+                        return False
+                except Exception as e:
+                    logger.error(e)
+                    return False
+                finally:
+                    ssl_socket_client.close_client()
+        else:
+            def submit_order_request():
+                try:
+                    submit_order_request_data['riskControl'] = self.risk_control
+                    resp = self.sess.post(url='https://trade.jd.com/shopping/order/submitOrder.action',
+                                          headers=submit_order_request_headers, data=submit_order_request_data)
+                    # 暂时不设置超时时间
+                    # resp = self.sess.post(url=url, data=data, headers=headers, timeout=(0.1, 0.08))
+                    resp_json = json.loads(resp.text)
+
+                    # 返回信息示例：
+                    # 下单失败
+                    # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 60123, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': '请输入支付密码！'}
+                    # {'overSea': False, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'orderXml': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 60017, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': '您多次提交过快，请稍后再试'}
+                    # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 60077, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': '获取用户订单信息失败'}
+                    # {"cartXml":null,"noStockSkuIds":"xxx","reqInfo":null,"hasJxj":false,"addedServiceList":null,"overSea":false,"orderXml":null,"sign":null,"pin":"xxx","needCheckCode":false,"success":false,"resultCode":600157,"orderId":0,"submitSkuNum":0,"deductMoneyFlag":0,"goJumpOrderCenter":false,"payInfo":null,"scaleSkuInfoListVO":null,"purchaseSkuInfoListVO":null,"noSupportHomeServiceSkuList":null,"msgMobile":null,"addressVO":{"pin":"xxx","areaName":"","provinceId":xx,"cityId":xx,"countyId":xx,"townId":xx,"paymentId":0,"selected":false,"addressDetail":"xx","mobile":"xx","idCard":"","phone":null,"email":null,"selfPickMobile":null,"selfPickPhone":null,"provinceName":null,"cityName":null,"countyName":null,"townName":null,"giftSenderConsigneeName":null,"giftSenderConsigneeMobile":null,"gcLat":0.0,"gcLng":0.0,"coord_type":0,"longitude":0.0,"latitude":0.0,"selfPickOptimize":0,"consigneeId":0,"selectedAddressType":0,"siteType":0,"helpMessage":null,"tipInfo":null,"cabinetAvailable":true,"limitKeyword":0,"specialRemark":null,"siteProvinceId":0,"siteCityId":0,"siteCountyId":0,"siteTownId":0,"skuSupported":false,"addressSupported":0,"isCod":0,"consigneeName":null,"pickVOname":null,"shipmentType":0,"retTag":0,"tagSource":0,"userDefinedTag":null,"newProvinceId":0,"newCityId":0,"newCountyId":0,"newTownId":0,"newProvinceName":null,"newCityName":null,"newCountyName":null,"newTownName":null,"checkLevel":0,"optimizePickID":0,"pickType":0,"dataSign":0,"overseas":0,"areaCode":null,"nameCode":null,"appSelfPickAddress":0,"associatePickId":0,"associateAddressId":0,"appId":null,"encryptText":null,"certNum":null,"used":false,"oldAddress":false,"mapping":false,"addressType":0,"fullAddress":"xxxx","postCode":null,"addressDefault":false,"addressName":null,"selfPickAddressShuntFlag":0,"pickId":0,"pickName":null,"pickVOselected":false,"mapUrl":null,"branchId":0,"canSelected":false,"address":null,"name":"xxx","message":null,"id":0},"msgUuid":null,"message":"xxxxxx商品无货"}
+                    # {'orderXml': None, 'overSea': False, 'noStockSkuIds': 'xxx', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'cartXml': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': False, 'resultCode': 600158, 'orderId': 0, 'submitSkuNum': 0, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': {'oldAddress': False, 'mapping': False, 'pin': 'xxx', 'areaName': '', 'provinceId': xx, 'cityId': xx, 'countyId': xx, 'townId': xx, 'paymentId': 0, 'selected': False, 'addressDetail': 'xxxx', 'mobile': 'xxxx', 'idCard': '', 'phone': None, 'email': None, 'selfPickMobile': None, 'selfPickPhone': None, 'provinceName': None, 'cityName': None, 'countyName': None, 'townName': None, 'giftSenderConsigneeName': None, 'giftSenderConsigneeMobile': None, 'gcLat': 0.0, 'gcLng': 0.0, 'coord_type': 0, 'longitude': 0.0, 'latitude': 0.0, 'selfPickOptimize': 0, 'consigneeId': 0, 'selectedAddressType': 0, 'newCityName': None, 'newCountyName': None, 'newTownName': None, 'checkLevel': 0, 'optimizePickID': 0, 'pickType': 0, 'dataSign': 0, 'overseas': 0, 'areaCode': None, 'nameCode': None, 'appSelfPickAddress': 0, 'associatePickId': 0, 'associateAddressId': 0, 'appId': None, 'encryptText': None, 'certNum': None, 'addressType': 0, 'fullAddress': 'xxxx', 'postCode': None, 'addressDefault': False, 'addressName': None, 'selfPickAddressShuntFlag': 0, 'pickId': 0, 'pickName': None, 'pickVOselected': False, 'mapUrl': None, 'branchId': 0, 'canSelected': False, 'siteType': 0, 'helpMessage': None, 'tipInfo': None, 'cabinetAvailable': True, 'limitKeyword': 0, 'specialRemark': None, 'siteProvinceId': 0, 'siteCityId': 0, 'siteCountyId': 0, 'siteTownId': 0, 'skuSupported': False, 'addressSupported': 0, 'isCod': 0, 'consigneeName': None, 'pickVOname': None, 'shipmentType': 0, 'retTag': 0, 'tagSource': 0, 'userDefinedTag': None, 'newProvinceId': 0, 'newCityId': 0, 'newCountyId': 0, 'newTownId': 0, 'newProvinceName': None, 'used': False, 'address': None, 'name': 'xx', 'message': None, 'id': 0}, 'msgUuid': None, 'message': 'xxxxxx商品无货'}
+                    # 下单成功
+                    # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': True, 'resultCode': 0, 'orderId': 8740xxxxx, 'submitSkuNum': 1, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': None}
+
+                    if resp_json.get('success'):
+                        order_id = resp_json.get('orderId')
+                        logger.info('订单提交成功! 订单号：%s', order_id)
+                        if self.send_message:
+                            self.messenger.send(text='jd-assistant 订单提交成功', desp='订单号：%s' % order_id)
+                        return True
+                    else:
+                        message, result_code = resp_json.get('message'), resp_json.get('resultCode')
+                        if result_code == 0:
+                            message = message + '(下单失败)'
+                            # self._save_invoice()
+                            # message = message + '(下单商品可能为第三方商品，将切换为普通发票进行尝试)'
+                        elif result_code == 60077:
+                            message = message + '(可能是购物车为空 或 未勾选购物车中商品)'
+                        elif result_code == 60123:
+                            message = message + '(需要在config.ini文件中配置支付密码)'
+                        logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
+                        logger.info(resp_json)
+                        return False
+                except Exception as e:
+                    logger.error(e)
+                    return False
+
+        self.request_info['submit_order_request'] = submit_order_request
+
+    def start_seckill_now(self, config):
+        # 开始抢购
+
+        # TODO 流程修改
+        if config.is_pass_cart is not True:
+            sku_ids = {config.sku_id: config.num}
+            add_cart_request = self.request_info['add_cart_request']
+
+            for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
+                payload = {
+                    'pid': sku_id,
+                    'pcount': count,
+                    'ptype': 1,
+                }
+                add_cart_request(payload)
+
+        # 获取订单结算页面信息
+        self.get_checkout_page_detail()
+
+        retry = config.retry
+        interval = config.interval
+        for count in range(1, retry + 1):
+            logger.info('第[%s/%s]次尝试提交订单', count, retry)
+            if self.submit_order():
+                break
+            logger.info('休息%ss', interval)
+            time.sleep(interval)
+        else:
+            logger.info('执行结束，提交订单失败！')
+        pass
