@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-import QtWebEngineUtil
+import QtWebEngine
+import address_util
 from SocketClient import SocketClient
 from config import global_config
 from exception import AsstException
@@ -360,7 +361,7 @@ class Assistant(object):
             self.nick_name = self.get_user_info()
             self._save_cookies()
 
-        # 初始化下单必须的参数
+        # 获取下单必须参数
         self.init_order_request_info()
 
     def _get_reserve_url(self, sku_id):
@@ -876,7 +877,7 @@ class Assistant(object):
         """
         submit_order_request = self.request_info['submit_order_request']
 
-        submit_order_request()
+        return submit_order_request()
 
     @check_login
     def submit_order_with_retry(self, retry=3, interval=4):
@@ -1308,10 +1309,8 @@ class Assistant(object):
         # 开抢前清空购物车
         self.clear_cart()
 
-        # 提前初始化请求方法
+        # 提前初始化请求信息
         self.init_request_method(config.fast_mode, config.is_risk_control)
-
-        interval = config.interval
 
         logger.info('准备抢购商品id为：%s', config.sku_id)
 
@@ -1319,22 +1318,7 @@ class Assistant(object):
                   fast_sleep_interval=config.fast_sleep_interval)
         t.start()
 
-        if config.is_pass_cart is not True:
-            self.add_item_to_cart(sku_ids={config.sku_id: config.num})
-            # gevent.joinall([gevent.spawn(self.add_item_to_cart(sku_ids={sku_id: num}))])
-
-        # 获取订单结算页面信息（后台可能会自动勾选默认地址）
-        self.get_checkout_page_detail()
-
-        retry = config.retry
-        for count in range(1, retry + 1):
-            logger.info('第[%s/%s]次尝试提交订单', count, retry)
-            if self.submit_order():
-                break
-            logger.info('休息%ss', interval)
-            time.sleep(interval)
-        else:
-            logger.info('执行结束，提交订单失败！')
+        self.start_seckill_now(config)
 
     @check_login
     def buy_item_in_stock(self, sku_ids, area, wait_all=False, stock_interval=3, submit_retry=3, submit_interval=5):
@@ -1381,6 +1365,63 @@ class Assistant(object):
                         return
 
                 time.sleep(stock_interval)
+
+    def init_order_request_info(self):
+        # 获取下单必须参数
+
+        # 获取：ipLoc-djd、ipLocation
+        if address_util.get_user_address(self) is not True:
+            logger.error('获取地址信息失败，请重试！')
+            exit(-1)
+
+        # 获取：eid、fp、track_id、risk_control（默认为空）
+
+        # 启动浏览器
+        br = QtWebEngine.CustomBrowser(self.sess.cookies, self.user_agent)
+
+        headers = {
+            # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-encoding': 'gzip, deflate, br',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'cache-control': 'max-age=0',
+            'dnt': '1',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+        }
+
+        br.openGetUrl('https://t.jd.com/home/follow', headers)
+
+        # print(br.page().profile().defaultProfile().httpUserAgent())
+
+        def jsCallback(data):
+            # print(data)
+            eid = data['eid']
+            fp = data['fp']
+            track_id = data['trackId']
+            if eid:
+                self.eid = eid
+            if fp:
+                self.fp = fp
+            if track_id:
+                self.track_id = track_id
+            if eid and fp and track_id:
+                logger.info('自动初始化下单参数成功！')
+
+        jsFunc = QtWebEngine.JsScript('''
+            function getCookie(name){ var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)"); if(arr=document.cookie.match(reg)){ return unescape(arr[2]); } else{ return null;} };
+            function getObj(){ var obj = {eid: '', fp: '', trackId: ''}, count = 0; for(var count=0;count<3;count++) { getJdEid(function (eid, fp, udfp) { var trackId = getCookie("TrackID"); if(eid && fp && trackId){ obj.eid = eid; obj.fp = fp; obj.trackId = trackId; return obj; } else { count++; sleep(500) } }); } return obj; };
+            getObj()
+            ''', jsCallback)
+        time.sleep(0.2)
+        br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
+
+        # 关闭浏览器
+        br.quit()
+        if not self.eid or not self.fp or not self.track_id:
+            raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
 
     def init_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息
@@ -1534,7 +1575,7 @@ class Assistant(object):
         submit_order_request_headers = {
             'User-Agent': self.user_agent,
             'Host': 'trade.jd.com',
-            'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action'
+            'Referer': 'https://trade.jd.com/shopping/order/getOrderInfo.action'
         }
         # 如果有密码则设置
         payment_pwd = global_config.get('account', 'payment_pwd')
@@ -1552,17 +1593,19 @@ class Assistant(object):
                         method='POST',
                         headers=submit_order_request_headers,
                         data=submit_order_request_data)
-                    ssl_socket_client.close_client()
                     # TODO 解析数据
                     if response_data:
-                        logger.info('下单请求已发送')
+                        logger.info('下单请求已提交，请去待付款页面检查是否抢购成功')
                         # print(response_data)
                         return True
                     else:
+                        logger.info('下单请求异常')
                         return False
                 except Exception as e:
                     logger.error(e)
                     return False
+                finally:
+                    ssl_socket_client.close_client()
         else:
             def submit_order_request():
                 try:
@@ -1608,52 +1651,33 @@ class Assistant(object):
 
         self.request_info['submit_order_request'] = submit_order_request
 
-    def init_order_request_info(self):
-        # 初始化下单必须参数：eid、fp、track_id、risk_control（默认为空）
+    def start_seckill_now(self, config):
+        # 开始抢购
 
-        # 启动浏览器
-        br = QtWebEngineUtil.CustomBrowser(self.sess.cookies, self.user_agent)
+        # TODO 流程修改
+        if config.is_pass_cart is not True:
+            sku_ids = {config.sku_id: config.num}
+            add_cart_request = self.request_info['add_cart_request']
 
-        headers = {
-            # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'accept-encoding': 'gzip, deflate, br',
-            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'cache-control': 'max-age=0',
-            'dnt': '1',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-        }
+            for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
+                payload = {
+                    'pid': sku_id,
+                    'pcount': count,
+                    'ptype': 1,
+                }
+                add_cart_request(payload)
 
-        br.openGetUrl('https://t.jd.com/home/follow', headers)
+        # 获取订单结算页面信息
+        self.get_checkout_page_detail()
 
-        # print(br.page().profile().defaultProfile().httpUserAgent())
-
-        def jsCallback(data):
-            # print(data)
-            eid = data['eid']
-            fp = data['fp']
-            track_id = data['trackId']
-            if eid:
-                self.eid = eid
-            if fp:
-                self.fp = fp
-            if track_id:
-                self.track_id = track_id
-            if eid and fp and track_id:
-                logger.info('自动初始化下单参数成功！')
-
-        jsFunc = QtWebEngineUtil.JsScript('''
-            function getCookie(name){ var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)"); if(arr=document.cookie.match(reg)){ return unescape(arr[2]); } else{ return null;} };
-            function getObj(){ var obj = {eid: '', fp: '', trackId: ''}, count = 0; for(var count=0;count<3;count++) { getJdEid(function (eid, fp, udfp) { var trackId = getCookie("TrackID"); if(eid && fp && trackId){ obj.eid = eid; obj.fp = fp; obj.trackId = trackId; return obj; } else { count++; sleep(500) } }); } return obj; };
-            getObj()
-            ''', jsCallback)
-        time.sleep(0.2)
-        br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
-
-        # 关闭浏览器
-        br.quit()
-        if not self.eid or not self.fp or not self.track_id:
-            raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+        retry = config.retry
+        interval = config.interval
+        for count in range(1, retry + 1):
+            logger.info('第[%s/%s]次尝试提交订单', count, retry)
+            if self.submit_order():
+                break
+            logger.info('休息%ss', interval)
+            time.sleep(interval)
+        else:
+            logger.info('执行结束，提交订单失败！')
+        pass

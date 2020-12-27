@@ -11,7 +11,7 @@ class SocketClient(object):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, conn_port=80, timeout=0.3):
+    def __init__(self, conn_port=80, timeout=1):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if conn_port == SocketClient.HTTP:
             pass
@@ -22,6 +22,7 @@ class SocketClient(object):
         self.sock = sock
         self.connected_set = set()
         self.conn_port = conn_port
+        self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
@@ -94,24 +95,24 @@ class SocketClient(object):
         sock.send(bytes(b_msg_array))
 
         if res_func:
-            res_func(self.sock)
+            res_func(sock)
         else:
             # TODO 解析页面
-            html = ''
             charset = 'utf-8'
+            response = bytearray()
             # 接收html字节数据
-            while True:
-                data = self.sock.recv(1024)
-                if data:
-                    try:
-                        html += data.decode(charset)
-                    except Exception as e:
-                        logger.error('页面解析异常：%s', e)
-                        return html
-                else:
-                    break
-            # 保持连接
-            return html
+            try:
+                rec = sock.recv(1024)
+                while rec:
+                    response.extend(rec)
+                    rec = sock.recv(1024)
+            except Exception as e:
+                logger.error('页面解析异常：%s', e)
+            finally:
+                # print('response：')
+                # print(response.decode(charset))
+                # 保持连接
+                return response.decode(charset)
 
     def close_client(self):
         self.sock.close()

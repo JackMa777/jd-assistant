@@ -18,17 +18,21 @@ class CustomBrowser(QWebEngineView):
         QWebEngineView.__init__(self)
         self.html = ''
         self.tree: lxml.html.etree._Element = None
+        page = self.page()
+        profile = page.profile().defaultProfile()
+        # TODO 指定缓存路径
+        # profile.setCachePath('./qt/Cache')
+        # profile.setPersistentStoragePath('./qt/WebEngine')
         # settings = self.settings()
-        # settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-        # settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        # page.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+        # page.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
         # 本地存储必须开启
         self.settings().setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
         my_cookie_dict = cookies
-        page = self.page()
-        profile = page.profile().defaultProfile()
         if user_agent:
             profile.setHttpUserAgent(user_agent)
         cookie_store = profile.cookieStore()
+        # cookie_store.deleteAllCookies()
         for cookie in iter(my_cookie_dict):
             jd_cookie = QNetworkCookie(name=QByteArray(cookie.name.encode()), value=QByteArray(cookie.value.encode()))
             # jd_cookie.setHttpOnly(True)
@@ -65,6 +69,7 @@ class CustomBrowser(QWebEngineView):
         self.loadFinished.connect(loop.quit)
         loadFunc()
         timer.start(timeout * 1000)
+        # self.show()
         loop.exec_()  # 开始执行，并等待加载完成
         if timer.isActive():
             # 加载完成执行
@@ -81,7 +86,6 @@ class CustomBrowser(QWebEngineView):
             def htmlCallable(data):
                 self.html = data
                 self.tree = lxml.html.fromstring(self.html)
-                # self.show()
                 self.app.quit()
                 # dodo = self.page().action(QWebEnginePage.SelectAll)
 
