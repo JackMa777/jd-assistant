@@ -43,6 +43,7 @@ class Assistant(object):
 
     def __init__(self, ):
         self.config = None
+        self.socket_list = []
         use_random_ua = global_config.getboolean('config', 'random_useragent')
         self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
         self.headers = {'User-Agent': self.user_agent}
@@ -1277,50 +1278,6 @@ class Assistant(object):
             self.exec_seckill(sku_id, server_buy_time, retry, interval, num, fast_mode)
 
     @check_login
-    def exec_reserve_seckill_by_time(self, config):
-        """定时抢购`预约抢购商品`
-
-        一定要确保预约的商品在购物车中才能使用这种方式！！！否则只能用其他方式
-
-        预约抢购商品特点：
-            1.需要提前点击预约
-            2.大部分此类商品在预约后自动加入购物车，在购物车中可见但无法勾选✓，也无法进入到结算页面（重要特征）
-            3.到了抢购的时间点后，才能勾选并结算下单
-
-        注意：
-            1.请在抢购开始前手动清空购物车中此类无法勾选的商品！（因为脚本在执行清空购物车操作时，无法清空不能勾选的商品）
-
-        :param sku_id: 商品id
-        :param buy_time: 下单时间，例如：'2018-09-28 22:45:50.000'
-        :param retry: 抢购重复执行次数，可选参数，默认4次
-        :param interval: 抢购执行间隔，可选参数，默认4秒
-        :param num: 购买数量，可选参数，默认1个
-        :return:
-        """
-
-        if not config:
-            raise AsstException('初始化配置为空！')
-
-        self.config = config
-
-        if config.buy_time is None:
-            exit(-1)
-
-        # 开抢前清空购物车
-        self.clear_cart()
-
-        # 提前初始化请求信息
-        self.init_request_method(config.fast_mode, config.is_risk_control)
-
-        logger.info('准备抢购商品id为：%s', config.sku_id)
-
-        t = Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
-                  fast_sleep_interval=config.fast_sleep_interval)
-        t.start()
-
-        self.start_seckill_now(config)
-
-    @check_login
     def buy_item_in_stock(self, sku_ids, area, wait_all=False, stock_interval=3, submit_retry=3, submit_interval=5):
         """根据库存自动下单商品
         :param sku_ids: 商品id。可以设置多个商品，也可以带数量，如：'1234' 或 '1234,5678' 或 '1234:2' 或 '1234:2,5678:3'
@@ -1365,6 +1322,57 @@ class Assistant(object):
                         return
 
                 time.sleep(stock_interval)
+
+    @check_login
+    def exec_reserve_seckill_by_time(self, config):
+        """定时抢购`预约抢购商品`
+
+        一定要确保预约的商品在购物车中才能使用这种方式！！！否则只能用其他方式
+
+        预约抢购商品特点：
+            1.需要提前点击预约
+            2.大部分此类商品在预约后自动加入购物车，在购物车中可见但无法勾选✓，也无法进入到结算页面（重要特征）
+            3.到了抢购的时间点后，才能勾选并结算下单
+
+        注意：
+            1.请在抢购开始前手动清空购物车中此类无法勾选的商品！（因为脚本在执行清空购物车操作时，无法清空不能勾选的商品）
+
+        :param sku_id: 商品id
+        :param buy_time: 下单时间，例如：'2018-09-28 22:45:50.000'
+        :param retry: 抢购重复执行次数，可选参数，默认4次
+        :param interval: 抢购执行间隔，可选参数，默认4秒
+        :param num: 购买数量，可选参数，默认1个
+        :return:
+        """
+
+        if not config:
+            raise AsstException('初始化配置为空！')
+
+        self.config = config
+
+        if config.buy_time is None:
+            exit(-1)
+
+        # 开抢前清空购物车
+        self.clear_cart()
+
+        # 提前初始化请求信息
+        self.init_request_method(config.fast_mode, config.is_risk_control)
+
+        logger.info('准备抢购商品id为：%s', config.sku_id)
+
+        t = Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
+                  fast_sleep_interval=config.fast_sleep_interval)
+
+        if self.config.fast_mode:
+            self.socket_list.append(SocketClient(443, 'cart.jd.com'))
+            self.socket_list.append(SocketClient(443, 'trade.jd.com'))
+            self.socket_list.append(SocketClient(443, 'trade.jd.com'))
+            t.start(self.connect_now)
+        else:
+            t.start()
+
+        self.start_seckill_now()
 
     def init_order_request_info(self):
         # 获取下单必须参数
@@ -1426,9 +1434,6 @@ class Assistant(object):
     def init_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息
 
-        if fast_mode:
-            ssl_socket_client = SocketClient(443)
-
         cookie_str = ''
         for cookie in iter(self.sess.cookies):
             cookie_str += f'{cookie.name}={cookie.value};'
@@ -1448,9 +1453,9 @@ class Assistant(object):
                                 logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
                                 break
 
-                        ssl_socket_client.send_http_request(url='https://cart.jd.com/gate.action', method='GET',
-                                                            headers=add_cart_request_headers, params=params,
-                                                            res_func=res_func)
+                        self.socket_list[0].send_http_request(url='https://cart.jd.com/gate.action', method='GET',
+                                                              headers=add_cart_request_headers, params=params,
+                                                              res_func=res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1501,7 +1506,7 @@ class Assistant(object):
                                 logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
                                 break
 
-                        ssl_socket_client.send_http_request(
+                        self.socket_list[1].send_http_request(
                             url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
                             headers=get_checkout_page_request_headers, params=params, res_func=res_func)
                         break
@@ -1588,7 +1593,7 @@ class Assistant(object):
             def submit_order_request():
                 submit_order_request_data['riskControl'] = self.risk_control
                 try:
-                    response_data = ssl_socket_client.send_http_request(
+                    response_data = self.socket_list[2].send_http_request(
                         url='https://trade.jd.com/shopping/order/submitOrder.action',
                         method='POST',
                         headers=submit_order_request_headers,
@@ -1604,8 +1609,6 @@ class Assistant(object):
                 except Exception as e:
                     logger.error(e)
                     return False
-                finally:
-                    ssl_socket_client.close_client()
         else:
             def submit_order_request():
                 try:
@@ -1651,8 +1654,17 @@ class Assistant(object):
 
         self.request_info['submit_order_request'] = submit_order_request
 
-    def start_seckill_now(self, config):
+    def connect_now(self):
+        for sock in self.socket_list:
+            sock.connect()
+
+    def close_now(self):
+        for sock in self.socket_list:
+            sock.close_client()
+
+    def start_seckill_now(self):
         # 开始抢购
+        config = self.config
 
         # TODO 流程修改
         if config.is_pass_cart is not True:
@@ -1680,4 +1692,6 @@ class Assistant(object):
             time.sleep(interval)
         else:
             logger.info('执行结束，提交订单失败！')
-        pass
+
+        if self.config.fast_mode:
+            self.close_now()

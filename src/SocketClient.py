@@ -11,7 +11,7 @@ class SocketClient(object):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, conn_port=80, timeout=1):
+    def __init__(self, conn_port=80, conn_host=None, timeout=0.5):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if conn_port == SocketClient.HTTP:
             pass
@@ -22,21 +22,29 @@ class SocketClient(object):
         self.sock = sock
         self.connected_set = set()
         self.conn_port = conn_port
+        if conn_host is not None:
+            host_split = conn_host.split('.')
+            domain = '.'.join(host_split[len(host_split) - 2:])
+            self.conn_host = conn_host
+            self.domain = domain
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
-    def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
-        sock = self.sock
-        if isinstance(headers, dict):
-            headers_list = []
-            for key, value in headers.items():
-                headers_list.append(f'{key}: {value}\r\n')
-            headers_str = ''.join(headers_list)
-        elif isinstance(headers, str):
-            headers_str = headers
+    def connect(self, host=None):
+        if host is not None:
+            host_split = host.split('.')
+            domain = '.'.join(host_split[len(host_split) - 2:])
         else:
-            # 默认添加请求头
-            headers_str = DEFAULT_HEADERS.join('\r\n')
+            host = self.conn_host
+            if host is None:
+                raise Exception('该socket初始化时未使用host参数')
+            domain = self.domain
+        if domain not in self.connected_set:
+            # 连接服务器
+            self.sock.connect((host, self.conn_port))
+            self.connected_set.add(domain)
+
+    def mark_byte_msg(self, url, method='GET', params=None, data=None, headers=None):
         # http协议处理
         if 'http://' in url:
             if self.conn_port != SocketClient.HTTP:
@@ -50,8 +58,6 @@ class SocketClient(object):
         url = url if '/' in url else url + '/'
         url_split = url.split('/', 1)
         host = url_split[0]
-        host_split = host.split('.')
-        domain = '.'.join(host_split[len(host_split) - 2:])
         uri_list = ['/', url_split[1]]
         if params:
             uri_list.append('?')
@@ -64,6 +70,16 @@ class SocketClient(object):
                 uri_list.append(params)
         # 处理报文
         b_msg_array = bytearray()
+        if isinstance(headers, dict):
+            headers_list = []
+            for key, value in headers.items():
+                headers_list.append(f'{key}: {value}\r\n')
+            headers_str = ''.join(headers_list)
+        elif isinstance(headers, str):
+            headers_str = headers
+        else:
+            # 默认添加请求头
+            headers_str = DEFAULT_HEADERS.join('\r\n')
         msg_list = [f'{method} {"".join(uri_list)} HTTP/1.1\r\nHost: {host}\r\n']
         if data:
             content_len = 0
@@ -86,16 +102,15 @@ class SocketClient(object):
         else:
             msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
             b_msg_array.extend(''.join(msg_list).encode())
-        if domain not in self.connected_set:
-            # 连接服务器
-            sock.connect((host, self.conn_port))
-            self.connected_set.add(domain)
-        # 发送报文
-        # print(b_msg_array)
-        sock.send(bytes(b_msg_array))
+        return bytes(b_msg_array)
 
-        if res_func:
-            res_func(sock)
+    def send(self, byte_msg: bytes):
+        self.sock.send(byte_msg)
+
+    def read(self, recv_func=None):
+        sock = self.sock
+        if recv_func:
+            return recv_func(sock)
         else:
             # TODO 解析页面
             charset = 'utf-8'
@@ -113,6 +128,28 @@ class SocketClient(object):
                 # print(response.decode(charset))
                 # 保持连接
                 return response.decode(charset)
+
+    def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
+        # http协议处理
+        if 'http://' in url:
+            if self.conn_port != SocketClient.HTTP:
+                raise Exception(f"该socket初始端口为:{self.conn_port}，请输入https地址")
+            url = url.replace('http://', '')
+        # https协议处理
+        if 'https://' in url:
+            if self.conn_port != SocketClient.HTTPS:
+                raise Exception(f"该socket初始端口为:{self.conn_port}，请输入http地址")
+            url = url.replace('https://', '')
+        byte_msg = self.mark_byte_msg(url, method, params, data, headers)
+        url = url if '/' in url else url + '/'
+        url_split = url.split('/', 1)
+        host = url_split[0]
+        self.connect(host)
+        # 发送报文
+        # print(byte_msg)
+        self.send(byte_msg)
+        # 读取报文
+        return self.read(res_func)
 
     def close_client(self):
         self.sock.close()
