@@ -20,29 +20,44 @@ class SocketClient(object):
         else:
             raise Exception("端口错误")
         self.sock = sock
-        self.connected_set = set()
         self.conn_port = conn_port
+        self.is_connected = False
         if conn_host is not None:
             host_split = conn_host.split('.')
             domain = '.'.join(host_split[len(host_split) - 2:])
             self.conn_host = conn_host
             self.domain = domain
+        else:
+            self.domain = None
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
     def connect(self, host=None):
+        connected = self.is_connected
+        domain = self.domain
         if host is not None:
             host_split = host.split('.')
-            domain = '.'.join(host_split[len(host_split) - 2:])
+            connect_domain = '.'.join(host_split[len(host_split) - 2:])
+            if domain is not None:
+                if domain != connect_domain:
+                    if connected:
+                        raise Exception('输入主机域名与该套接字已连接主机域名不一致')
+                    else:
+                        raise Exception('输入主机域名与该套接字已设置主机域名不一致')
+                elif connected:
+                    return
+            elif connected:
+                return
         else:
+            if connected:
+                return
             host = self.conn_host
             if host is None:
-                raise Exception('该socket初始化时未使用host参数')
-            domain = self.domain
-        if domain not in self.connected_set:
-            # 连接服务器
-            self.sock.connect((host, self.conn_port))
-            self.connected_set.add(domain)
+                raise Exception('该socket初始化时未添加host参数')
+            connect_domain = domain
+        # 连接服务器
+        self.sock.connect((host, self.conn_port))
+        self.domain = connect_domain
 
     def mark_byte_msg(self, url, method='GET', params=None, data=None, headers=None):
         # http协议处理
