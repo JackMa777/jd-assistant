@@ -57,6 +57,7 @@ class SocketClient(object):
             connect_domain = domain
         # 连接服务器
         self.sock.connect((host, self.conn_port))
+        self.is_connected = True
         self.domain = connect_domain
 
     def mark_byte_msg(self, url, method='GET', params=None, data=None, headers=None):
