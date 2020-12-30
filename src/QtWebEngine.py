@@ -20,6 +20,7 @@ class CustomBrowser(QWebEngineView):
         self.tree: lxml.html.etree._Element = None
         page = self.page()
         profile = page.profile().defaultProfile()
+        self.showMinimized()
         # TODO 指定缓存路径
         # profile.setCachePath('./qt/Cache')
         # profile.setPersistentStoragePath('./qt/WebEngine')
