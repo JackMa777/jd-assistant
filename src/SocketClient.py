@@ -95,7 +95,7 @@ class SocketClient(object):
             headers_str = headers
         else:
             # 默认添加请求头
-            headers_str = DEFAULT_HEADERS.join('\r\n')
+            headers_str = f'{DEFAULT_HEADERS}\r\n'
         msg_list = [f'{method} {"".join(uri_list)} HTTP/1.1\r\nHost: {host}\r\n']
         if data:
             content_len = 0
@@ -123,7 +123,7 @@ class SocketClient(object):
     def send(self, byte_msg: bytes):
         self.sock.send(byte_msg)
 
-    def read(self, recv_func=None):
+    def get_content(self, recv_func=None):
         sock = self.sock
         if recv_func:
             return recv_func(sock)
@@ -165,7 +165,7 @@ class SocketClient(object):
         # print(byte_msg)
         self.send(byte_msg)
         # 读取报文
-        return self.read(res_func)
+        return self.get_content(res_func)
 
     def close_client(self):
         self.sock.close()
