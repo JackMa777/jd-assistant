@@ -1,6 +1,7 @@
 __pycache__/
 .idea/
 cookies/
+ChromeCache/
 
 *.log
 *.png

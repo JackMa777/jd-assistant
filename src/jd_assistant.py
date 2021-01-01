@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-import QtWebEngine
+import CustomBrowser
 import address_util
 from SocketClient import SocketClient
 from config import global_config
@@ -51,6 +51,8 @@ class Assistant(object):
         self.fp = global_config.get('config', 'fp')
         self.track_id = global_config.get('config', 'track_id')
         self.risk_control = global_config.get('config', 'risk_control')
+        self.chromedriver_path = global_config.get('config', 'chromedriver_path')
+        self.chrome_path = global_config.get('config', 'chrome_path')
 
         self.timeout = float(global_config.get('config', 'timeout') or DEFAULT_TIMEOUT)
         self.send_message = global_config.getboolean('messenger', 'enable')
@@ -1385,24 +1387,20 @@ class Assistant(object):
         # 获取：eid、fp、track_id、risk_control（默认为空）
 
         # 启动浏览器
-        br = QtWebEngine.CustomBrowser(self.sess.cookies, self.user_agent)
+        br = CustomBrowser.CustomBrowser(self.sess.cookies, self.user_agent, self.chromedriver_path, self.chrome_path)
 
-        headers = {
-            # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'accept-encoding': 'gzip, deflate, br',
-            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'cache-control': 'max-age=0',
-            'dnt': '1',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-        }
-
-        br.openGetUrl('https://t.jd.com/home/follow', headers)
-
-        # print(br.page().profile().defaultProfile().httpUserAgent())
+        # headers = {
+        #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        #     'accept-encoding': 'gzip, deflate, br',
+        #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        #     'cache-control': 'max-age=0',
+        #     'dnt': '1',
+        #     'sec-fetch-dest': 'document',
+        #     'sec-fetch-mode': 'navigate',
+        #     'sec-fetch-site': 'none',
+        #     'sec-fetch-user': '?1',
+        #     'upgrade-insecure-requests': '1',
+        # }
 
         def jsCallback(data):
             # print(data)
@@ -1418,13 +1416,14 @@ class Assistant(object):
             if eid and fp and track_id:
                 logger.info('自动初始化下单参数成功！')
 
-        jsFunc = QtWebEngine.JsScript('''
-            function getCookie(name){ var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)"); if(arr=document.cookie.match(reg)){ return unescape(arr[2]); } else{ return null;} };
-            function getObj(){ var obj = {eid: '', fp: '', trackId: ''}, count = 0; for(var count=0;count<3;count++) { getJdEid(function (eid, fp, udfp) { var trackId = getCookie("TrackID"); if(eid && fp && trackId){ obj.eid = eid; obj.fp = fp; obj.trackId = trackId; return obj; } else { count++; sleep(500) } }); } return obj; };
-            getObj()
-            ''', jsCallback)
-        time.sleep(0.2)
-        br.openGetUrl('https://order.jd.com/center/list.action', headers, jsFunc)
+        jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
+                                        'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
+                                        'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
+                                        'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<3;count++){'
+                                        'getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
+                                        'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
+                                        'else{count++;sleep(500)}})};return obj})()', jsCallback)
+        br.openUrl('https://order.jd.com/center/list.action', jsFunc)
 
         # 关闭浏览器
         br.quit()
