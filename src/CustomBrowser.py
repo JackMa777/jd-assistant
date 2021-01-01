@@ -12,7 +12,8 @@ class CustomBrowser(object):
         chrome_options = webdriver.ChromeOptions()
         chrome_options.headless = True
         chrome_options.add_argument(f'user-agent="{user_agent}"')
-        chrome_options.add_argument(f'--user-data-dir={os.path.dirname(os.getcwd())}/ChromeCache')
+        chrome_options.add_argument(f'--user-data-dir={os.path.dirname(os.getcwd())}/Browser/Data')
+        chrome_options.add_argument(f'-–disk-cache-dir={os.path.dirname(os.getcwd())}/Browser/Cache')
         chrome_options.add_experimental_option("excludeSwitches", ['enable-automation', 'enable-logging'])
         if chrome_path:
             chrome_options.binary_location = chrome_path
@@ -37,7 +38,6 @@ class CustomBrowser(object):
                 if cookie.expires:
                     cookie_dict['expiry'] = cookie.expires
                 client.add_cookie(cookie_dict)
-        self.html = ''
 
     def openUrl(self, url, jsScript=None, timeout=5):
         client = self.client
