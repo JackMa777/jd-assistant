@@ -11,6 +11,7 @@ class CustomBrowser(object):
 
         chrome_options = webdriver.ChromeOptions()
         chrome_options.headless = True
+        chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument(f'user-agent="{user_agent}"')
         chrome_options.add_argument(f'--user-data-dir={os.path.dirname(os.getcwd())}/Browser/Data')
         chrome_options.add_argument(f'-–disk-cache-dir={os.path.dirname(os.getcwd())}/Browser/Cache')
