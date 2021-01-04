@@ -138,7 +138,8 @@ class SocketClient(object):
                     response.extend(rec)
                     rec = sock.recv(1024)
             except Exception as e:
-                logger.error('页面解析异常：%s', e)
+                pass
+                # logger.error('页面解析异常：%s', e)
             finally:
                 # print('response：')
                 # print(response.decode(charset))
