@@ -1599,8 +1599,8 @@ class Assistant(object):
                         data=submit_order_request_data)
                     # TODO 解析数据
                     if response_data:
+                        logger.info('响应数据：\n %s', response_data)
                         logger.info('下单请求已提交，请去待付款页面检查是否抢购成功')
-                        # print(response_data)
                         return True
                     else:
                         logger.info('下单请求异常')
