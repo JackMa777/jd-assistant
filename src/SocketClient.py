@@ -53,6 +53,7 @@ class SocketClient(object):
                 return
         else:
             if connected:
+                logger.info('已连接')
                 return
             host = self.conn_host
             if host is None:
@@ -63,16 +64,12 @@ class SocketClient(object):
         self.is_connected = True
         self.domain = connect_domain
 
-    def mark_byte_msg(self, url, method='GET', params=None, data=None, headers=None):
+    def mark_byte_msg(url, method='GET', params=None, data=None, headers=None):
         # http协议处理
         if 'http://' in url:
-            if self.conn_port != SocketClient.HTTP:
-                raise Exception(f"该socket初始端口为:{self.conn_port}，请输入https地址")
             url = url.replace('http://', '')
         # https协议处理
         if 'https://' in url:
-            if self.conn_port != SocketClient.HTTPS:
-                raise Exception(f"该socket初始端口为:{self.conn_port}，请输入http地址")
             url = url.replace('https://', '')
         url = url if '/' in url else url + '/'
         url_split = url.split('/', 1)
@@ -166,14 +163,16 @@ class SocketClient(object):
             if self.conn_port != SocketClient.HTTPS:
                 raise Exception(f"该socket初始端口为:{self.conn_port}，请输入http地址")
             url = url.replace('https://', '')
-        byte_msg = self.mark_byte_msg(url, method, params, data, headers)
+        byte_msg = SocketClient.mark_byte_msg(url, method, params, data, headers)
         url = url if '/' in url else url + '/'
         url_split = url.split('/', 1)
         host = url_split[0]
         self.connect(host)
         # 发送报文
         # print(byte_msg)
+        logger.info('发送')
         self.send(byte_msg)
+        logger.info('已发送')
         # 读取报文
         return self.get_http_response(res_func)
 
