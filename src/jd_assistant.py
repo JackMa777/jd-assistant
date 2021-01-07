@@ -1387,47 +1387,52 @@ class Assistant(object):
         # 获取：eid、fp、track_id、risk_control（默认为空）
 
         # 启动浏览器
-        br = CustomBrowser.CustomBrowser(self.sess.cookies, self.user_agent, self.chromedriver_path, self.chrome_path)
+        try:
+            br = CustomBrowser.CustomBrowser(self.sess.cookies, self.user_agent, self.chromedriver_path,
+                                             self.chrome_path)
 
-        # headers = {
-        #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-        #     'accept-encoding': 'gzip, deflate, br',
-        #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        #     'cache-control': 'max-age=0',
-        #     'dnt': '1',
-        #     'sec-fetch-dest': 'document',
-        #     'sec-fetch-mode': 'navigate',
-        #     'sec-fetch-site': 'none',
-        #     'sec-fetch-user': '?1',
-        #     'upgrade-insecure-requests': '1',
-        # }
+            # headers = {
+            #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            #     'accept-encoding': 'gzip, deflate, br',
+            #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            #     'cache-control': 'max-age=0',
+            #     'dnt': '1',
+            #     'sec-fetch-dest': 'document',
+            #     'sec-fetch-mode': 'navigate',
+            #     'sec-fetch-site': 'none',
+            #     'sec-fetch-user': '?1',
+            #     'upgrade-insecure-requests': '1',
+            # }
 
-        def jsCallback(data):
-            # print(data)
-            eid = data['eid']
-            fp = data['fp']
-            track_id = data['trackId']
-            if eid:
-                self.eid = eid
-            if fp:
-                self.fp = fp
-            if track_id:
-                self.track_id = track_id
-            if eid and fp and track_id:
-                logger.info('自动初始化下单参数成功！')
+            def jsCallback(data):
+                # print(data)
+                eid = data['eid']
+                fp = data['fp']
+                track_id = data['trackId']
+                if eid:
+                    self.eid = eid
+                if fp:
+                    self.fp = fp
+                if track_id:
+                    self.track_id = track_id
+                if eid and fp and track_id:
+                    logger.info('自动初始化下单参数成功！')
 
-        jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
-                                        'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
-                                        'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
-                                        'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<3;count++){'
-                                        'try{getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
-                                        'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
-                                        'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
-                                        jsCallback)
-        br.openUrl('https://order.jd.com/center/list.action', jsFunc)
+            jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
+                                            'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
+                                            'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
+                                            'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<3;count++){'
+                                            'try{getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
+                                            'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
+                                            'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
+                                            jsCallback)
+            br.openUrl('https://order.jd.com/center/list.action', jsFunc)
 
-        # 关闭浏览器
-        br.quit()
+            # 关闭浏览器
+            br.quit()
+        except Exception as e:
+            logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置')
+
         if not self.eid or not self.fp or not self.track_id:
             raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
 
