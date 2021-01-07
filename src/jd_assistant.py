@@ -1597,11 +1597,35 @@ class Assistant(object):
                         method='POST',
                         headers=submit_order_request_headers,
                         data=submit_order_request_data)
-                    # TODO 解析数据
                     if response_data:
-                        logger.info('响应数据：\n %s', response_data)
-                        logger.info('下单请求已提交，请去待付款页面检查是否抢购成功')
-                        return True
+                        try:
+                            resp_json = json.loads(response_data)
+                            if resp_json.get('success'):
+                                order_id = resp_json.get('orderId')
+                                logger.info('订单提交成功! 订单号：%s', order_id)
+                                if self.send_message:
+                                    self.messenger.send(text='jd-assistant 订单提交成功', desp='订单号：%s' % order_id)
+                                return True
+                            else:
+                                message, result_code = resp_json.get('message'), resp_json.get('resultCode')
+                                if result_code == 0:
+                                    message = message + '(下单失败)'
+                                    # self._save_invoice()
+                                    # message = message + '(下单商品可能为第三方商品，将切换为普通发票进行尝试)'
+                                elif result_code == 60077:
+                                    message = message + '(可能是购物车为空 或 未勾选购物车中商品)'
+                                elif result_code == 60123:
+                                    message = message + '(需要在config.ini文件中配置支付密码)'
+                                elif result_code == 600158:
+                                    logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
+                                    logger.info(f'很抱歉，您抢购的商品无货！本次抢购结束')
+                                    return True
+                                logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
+                                logger.info(f'响应数据：\n{resp_json}')
+                                return False
+                        except Exception:
+                            logger.info('数据解析异常，响应数据：\n %s', response_data)
+                            return False
                     else:
                         logger.info('下单请求异常')
                         return False
@@ -1644,8 +1668,12 @@ class Assistant(object):
                             message = message + '(可能是购物车为空 或 未勾选购物车中商品)'
                         elif result_code == 60123:
                             message = message + '(需要在config.ini文件中配置支付密码)'
+                        elif result_code == 600158:
+                            logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
+                            logger.info(f'很抱歉，您抢购的商品无货！本次抢购结束')
+                            return True
                         logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
-                        logger.info(resp_json)
+                        logger.info(f'响应数据：\n{resp_json}')
                         return False
                 except Exception as e:
                     logger.error(e)

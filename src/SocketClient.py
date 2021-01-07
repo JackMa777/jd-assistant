@@ -1,6 +1,9 @@
 import logging
 import socket
 import ssl
+from http import client
+
+from urllib3 import HTTPResponse
 
 logger = logging.getLogger()
 
@@ -123,28 +126,34 @@ class SocketClient(object):
     def send(self, byte_msg: bytes):
         self.sock.send(byte_msg)
 
-    def get_content(self, recv_func=None):
+    def get_http_response(self, recv_func=None):
         sock = self.sock
+        charset = 'utf-8'
+        _UNKNOWN = 'UNKNOWN'
+        # 接收html字节数据
         if recv_func:
             return recv_func(sock)
         else:
-            # TODO 解析页面
-            charset = 'utf-8'
-            response = bytearray()
-            # 接收html字节数据
+            http_response = None
+            r = client.HTTPResponse(sock)
             try:
-                rec = sock.recv(1024)
-                while rec:
-                    response.extend(rec)
-                    rec = sock.recv(1024)
+                try:
+                    r.begin()
+                except ConnectionError:
+                    self.close_client()
+                    logger.error('拉取数据连接异常')
+                will_close = r.will_close
+                http_response = HTTPResponse.from_httplib(r)
+                if will_close and will_close != _UNKNOWN:
+                    self.close_client()
             except Exception as e:
-                pass
-                # logger.error('页面解析异常：%s', e)
+                logger.error('数据接收异常：%s', e)
             finally:
+                r.close()
                 # print('response：')
                 # print(response.decode(charset))
                 # 保持连接
-                return response.decode(charset)
+                return http_response.data.decode(charset)
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
         # http协议处理
@@ -166,7 +175,7 @@ class SocketClient(object):
         # print(byte_msg)
         self.send(byte_msg)
         # 读取报文
-        return self.get_content(res_func)
+        return self.get_http_response(res_func)
 
     def close_client(self):
         self.sock.close()
