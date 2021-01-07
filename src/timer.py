@@ -36,6 +36,8 @@ class Timer(object):
         while True:
             if now_time() > buy_time_timestamp:
                 logger.info('时间到达，开始执行')
+                if is_connected is not True:
+                    sock_conn_func()
                 break
             else:
                 if now_time() > fast_buy_time_timestamp:

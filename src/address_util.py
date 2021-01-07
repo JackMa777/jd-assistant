@@ -23,6 +23,7 @@ def get_user_address(main_obj):
     ipLocation = None
     province_id = None
     address_count = 0
+    time.sleep(0.05)
     while True:
         try:
             address_resp = main_obj.sess.get(url=address_url, params=address_params,
@@ -32,7 +33,7 @@ def get_user_address(main_obj):
             break
         except Exception as e:
             address_count += 1
-            logger.error('获取地址信息失败 %s', e)
+            logger.error('获取地址信息失败，重试：%s，错误：%s', address_count, e)
             if address_count > 2:
                 exit(-1)
         finally:
@@ -64,7 +65,7 @@ def get_user_address(main_obj):
             break
         except Exception as e:
             address_count += 1
-            logger.error('获取地址信息失败 %s', e)
+            logger.error('获取地址信息失败，重试：%s，错误：%s', address_count, e)
             if address_count > 2:
                 exit(-1)
     cookies = main_obj.sess.cookies

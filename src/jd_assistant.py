@@ -1420,9 +1420,10 @@ class Assistant(object):
                                         'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
                                         'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
                                         'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<3;count++){'
-                                        'getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
+                                        'try{getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
                                         'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
-                                        'else{count++;sleep(500)}})};return obj})()', jsCallback)
+                                        'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
+                                        jsCallback)
         br.openUrl('https://order.jd.com/center/list.action', jsFunc)
 
         # 关闭浏览器
@@ -1432,29 +1433,43 @@ class Assistant(object):
 
     def init_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息
+        # TODO 阻塞优化
 
         cookie_str = ''
         for cookie in iter(self.sess.cookies):
             cookie_str += f'{cookie.name}={cookie.value};'
+        config = self.config
         # 初始化添加购物车请求方法
         add_cart_request_headers = self.headers.copy()
         if fast_mode:
             add_cart_request_headers['cookie'] = cookie_str
+            params = {
+                'pid': config.sku_id,
+                'pcount': config.num,
+                'ptype': 1,
+            }
+            b_msg = SocketClient.mark_byte_msg(url='https://cart.jd.com/gate.action',
+                                               method='GET',
+                                               headers=add_cart_request_headers,
+                                               params=params)
 
             def add_cart_request(params):
-                # 使用socket模拟https并截断响应
+                logger.info('添加购物车请求')
+                sock = self.socket_list[0]
                 i = 0
                 while i < 3:
                     try:
                         def res_func(conn):
                             while True:
+                                logger.info('接收')
                                 data = conn.recv(1)
-                                logger.info('已发送添加到购物车请求，为提高抢购速度，已截断响应数据')
+                                logger.info('已接收-为提高抢购速度，已截断响应数据')
                                 break
 
-                        self.socket_list[0].send_http_request(url='https://cart.jd.com/gate.action', method='GET',
-                                                              headers=add_cart_request_headers, params=params,
-                                                              res_func=res_func)
+                        logger.info('发送')
+                        sock.send(b_msg)
+                        logger.info('已发送')
+                        sock.get_http_response(res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1495,14 +1510,15 @@ class Assistant(object):
             get_checkout_page_request_headers['cookie'] = cookie_str
 
             def get_checkout_page_request(params):
-                # 使用socket模拟https并截断响应
+                logger.info('订单结算请求')
                 i = 0
                 while i < 3:
                     try:
                         def res_func(conn):
                             while True:
+                                logger.info('接收')
                                 data = conn.recv(1)
-                                logger.info('已发送订单结算请求，为提高抢购速度，已截断响应数据')
+                                logger.info('已接收-为提高抢购速度，已截断响应数据')
                                 break
 
                         self.socket_list[1].send_http_request(
@@ -1591,6 +1607,7 @@ class Assistant(object):
 
             def submit_order_request():
                 submit_order_request_data['riskControl'] = self.risk_control
+                logger.info('提交订单请求')
                 try:
                     response_data = self.socket_list[2].send_http_request(
                         url='https://trade.jd.com/shopping/order/submitOrder.action',
@@ -1684,6 +1701,7 @@ class Assistant(object):
     def connect_now(self):
         for sock in self.socket_list:
             sock.connect()
+        logger.info('已建立连接')
 
     def close_now(self):
         for sock in self.socket_list:
