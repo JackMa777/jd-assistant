@@ -1436,11 +1436,12 @@ class Assistant(object):
             br.quit()
         except Exception as e:
             logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置')
-            logger.info('chrome自行下载即可')
             logger.info('chromedriver_path可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本')
+            logger.info('chrome自行下载即可')
 
         if not self.eid or not self.fp or not self.track_id:
-            raise AsstException('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            exit(-1)
 
     def init_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息
