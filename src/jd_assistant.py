@@ -1367,8 +1367,12 @@ class Assistant(object):
                   fast_sleep_interval=config.fast_sleep_interval)
 
         if self.config.fast_mode:
-            self.socket_list.append(SocketClient(443, 'cart.jd.com'))
-            self.socket_list.append(SocketClient(443, 'trade.jd.com'))
+            sock1 = SocketClient(443, 'cart.jd.com')
+            # TODO socket配置
+            self.socket_list.append(sock1)
+            sock2 = SocketClient(443, 'trade.jd.com')
+            # TODO socket配置
+            self.socket_list.append(sock2)
             self.socket_list.append(SocketClient(443, 'trade.jd.com'))
             t.start(self.connect_now)
         else:
@@ -1468,11 +1472,11 @@ class Assistant(object):
                     try:
                         def res_func(conn):
                             while True:
-                                logger.info('接收')
                                 data = conn.recv(1)
                                 logger.info('已接收-为提高抢购速度，已截断响应数据')
                                 break
 
+                        sock.connect()
                         logger.info('发送')
                         sock.send(b_msg)
                         logger.info('已发送')
@@ -1523,7 +1527,6 @@ class Assistant(object):
                     try:
                         def res_func(conn):
                             while True:
-                                logger.info('接收')
                                 data = conn.recv(1)
                                 logger.info('已接收-为提高抢购速度，已截断响应数据')
                                 break
@@ -1708,7 +1711,6 @@ class Assistant(object):
     def connect_now(self):
         for sock in self.socket_list:
             sock.connect()
-        logger.info('已建立连接')
 
     def close_now(self):
         for sock in self.socket_list:

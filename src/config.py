@@ -33,8 +33,8 @@ class CustomConfig(object):
     retry = 5                   # 抢购重复执行次数，可选参数，默认5次
     interval = 0.5              # 提交订单执行间隔，可选参数，默认500毫秒
     num = 1                     # 购买数量，可选参数，默认1个
-    sleep_interval = 0.5        # 抢购前倒计时轮询时间，默认0.5秒
-    fast_sleep_interval = 0.01  # 抢购5秒内倒计时轮询时间，默认0.01秒
+    sleep_interval = 1          # 抢购前倒计时轮询时间，默认1秒
+    fast_sleep_interval = 0.01  # 抢购3秒内倒计时轮询时间，默认0.01秒
     is_risk_control = False     # 账号是否被风控，默认False
     fast_mode = True            # 如果帐号没被风控，可启用快速抢购模式，可一定程度提高抢购成功率，默认True
 

@@ -2,6 +2,7 @@ import logging
 import socket
 import ssl
 from http import client
+from typing import Union
 
 from urllib3 import HTTPResponse
 
@@ -53,7 +54,6 @@ class SocketClient(object):
                 return
         else:
             if connected:
-                logger.info('已连接')
                 return
             host = self.conn_host
             if host is None:
@@ -61,6 +61,7 @@ class SocketClient(object):
             connect_domain = domain
         # 连接服务器
         self.sock.connect((host, self.conn_port))
+        logger.info(f'已与 {host} 连接')
         self.is_connected = True
         self.domain = connect_domain
 
@@ -170,7 +171,6 @@ class SocketClient(object):
         self.connect(host)
         # 发送报文
         # print(byte_msg)
-        logger.info('发送')
         self.send(byte_msg)
         logger.info('已发送')
         # 读取报文

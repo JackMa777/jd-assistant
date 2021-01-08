@@ -12,7 +12,7 @@ from log import logger
 
 class Timer(object):
 
-    def __init__(self, buy_time, sleep_interval=0.5, fast_sleep_interval=0.01):
+    def __init__(self, buy_time, sleep_interval=1, fast_sleep_interval=0.01):
 
         # 同步京东服务器时间
         self.setSystemTime()
@@ -20,7 +20,7 @@ class Timer(object):
         # '2018-09-28 22:45:50.000'
         self.buy_time = datetime.strptime(buy_time, "%Y-%m-%d %H:%M:%S.%f")
         self.fast_buy_time = self.buy_time + timedelta(seconds=-3)
-        self.connect_time = self.buy_time + timedelta(seconds=-1)
+        self.connect_time = self.buy_time + timedelta(seconds=-3)
         self.sleep_interval = sleep_interval
         self.fast_sleep_interval = fast_sleep_interval
 
@@ -30,24 +30,27 @@ class Timer(object):
         now_time = time.time
         buy_time_timestamp = self.buy_time.timestamp()
         fast_buy_time_timestamp = self.fast_buy_time.timestamp()
-        connect_time_timestamp = self.connect_time.timestamp()
+        # connect_time_timestamp = self.connect_time.timestamp()
         fast_sleep_interval = self.fast_sleep_interval
         sleep_interval = self.sleep_interval
         while True:
             if now_time() > buy_time_timestamp:
                 logger.info('时间到达，开始执行')
                 if is_connected is not True:
-                    sock_conn_func()
+                    if sock_conn_func is not None:
+                        sock_conn_func()
                 break
             else:
                 if now_time() > fast_buy_time_timestamp:
                     if is_connected:
                         time.sleep(fast_sleep_interval)
                     else:
-                        if now_time() > connect_time_timestamp and sock_conn_func is not None:
+                        # if now_time() > connect_time_timestamp and sock_conn_func is not None:
+                        if sock_conn_func is not None:
                             sock_conn_func()
-                        is_connected = True
+                            is_connected = True
                 else:
+                    # TODO 保活
                     time.sleep(sleep_interval)
 
     def setSystemTime(self):
