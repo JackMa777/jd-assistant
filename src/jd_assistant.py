@@ -1477,7 +1477,6 @@ class Assistant(object):
                                 break
 
                         sock.connect()
-                        logger.info('发送')
                         sock.send(b_msg)
                         logger.info('已发送')
                         sock.get_http_response(res_func)
