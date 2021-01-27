@@ -1026,7 +1026,7 @@ class Assistant(object):
             'Host': 'itemko.jd.com',
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
-        retry_interval = 0.05
+        retry_interval = 0.2
         retry_count = 0
 
         while retry_count < 10:
@@ -1245,9 +1245,8 @@ class Assistant(object):
             logger.info('执行结束，抢购%s失败！', sku_id)
             return False
 
-    @deprecated
-    def exec_seckill_by_time(self, sku_ids, buy_time=None, sku_buy_time=None, retry=4, interval=4, num=1,
-                             fast_mode=True, sleep_interval=0.5, fast_sleep_interval=0.01):
+    @check_login
+    def exec_seckill_by_time(self, config):
         """定时抢购
         :param sku_ids: 商品id，多个商品id用逗号进行分割，如"123,456,789"
         :param buy_time: 下单时间，例如：'2018-09-28 22:45:50.000'
@@ -1257,27 +1256,58 @@ class Assistant(object):
         :param fast_mode: 快速模式：略过访问抢购订单结算页面这一步骤，默认为 True
         :return:
         """
-        items_dict = parse_sku_id(sku_ids=sku_ids)
+
+        if not config:
+            raise AsstException('初始化配置为空！')
+
+        self.config = config
+
+        # 1.提前初始化请求信息、方法
+        # TODO 修改
+        time_dict = self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
+        items_dict = parse_sku_id(sku_ids=config.sku_id)
+
+        # TODO 修改
+        # 2.倒计时
         logger.info('准备抢购商品:%s', list(items_dict.keys()))
+        t = Timer(buy_time=time_dict['realy_buy_time'], sleep_interval=config.sleep_interval,
+                  fast_sleep_interval=config.fast_sleep_interval)
+        if self.config.fast_mode:
+            self.make_seckill_connect()
+            t.start(self.connect_now)
+        else:
+            t.start()
+
+        # 3.执行
+        for sku_id in items_dict:
+            logger.info('开始抢购商品:%s', sku_id)
+            # TODO 修改
+            self.exec_seckill(sku_id, time_dict['server_buy_time'], config.retry, config.interval, int(items_dict[sku_id]), config.fast_mode)
+
+    def init_seckill_request_method(self, fast_mode, is_risk_control):
+        # 提前初始化请求信息、方法
+        config = self.config
         server_buy_time = None
         realy_buy_time = None
 
-        if sku_buy_time is None:
-            exit(-1)
-        else:
-            server_buy_datetime = datetime.strptime(sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
+        if config.sku_buy_time:
+            server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
             server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
-            if buy_time is None:
+            if config.buy_time:
                 realy_buy_time = (server_buy_datetime + timedelta(milliseconds=-50)).strftime("%Y-%m-%d %H:%M:%S.%f")
             else:
-                realy_buy_time = buy_time
+                realy_buy_time = config.buy_time
+        elif config.buy_time:
+            server_buy_datetime = datetime.strptime(config.buy_time, "%Y-%m-%d %H:%M:%S.%f")
+            server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
+            realy_buy_time = config.buy_time
+        else:
+            exit(-1)
+        return {'realy_buy_time': realy_buy_time, 'server_buy_time': server_buy_time}
 
-        t = Timer(buy_time=realy_buy_time, sleep_interval=sleep_interval, fast_sleep_interval=fast_sleep_interval)
-        t.start()
-
-        for sku_id in items_dict:
-            logger.info('开始抢购商品:%s', sku_id)
-            self.exec_seckill(sku_id, server_buy_time, retry, interval, num, fast_mode)
+    def make_seckill_connect(self):
+        # TODO 创建连接类
+        pass
 
     @check_login
     def buy_item_in_stock(self, sku_ids, area, wait_all=False, stock_interval=3, submit_retry=3, submit_interval=5):
@@ -1358,23 +1388,20 @@ class Assistant(object):
         # 开抢前清空购物车
         self.clear_cart()
 
-        # 提前初始化请求信息
+        # 1.提前初始化请求信息、方法
         self.init_reserve_seckill_request_method(config.fast_mode, config.is_risk_control)
 
+        # 2.倒计时
         logger.info('准备抢购商品id为：%s', config.sku_id)
-
         t = Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
                   fast_sleep_interval=config.fast_sleep_interval)
-
         if self.config.fast_mode:
             self.make_reserve_seckill_connect()
             t.start(self.connect_now)
         else:
             t.start()
 
-        # 开始抢购
-        config = self.config
-
+        # 3.执行
         # TODO 流程修改
         if config.is_pass_cart is not True:
             sku_ids = {config.sku_id: config.num}
@@ -1470,7 +1497,7 @@ class Assistant(object):
             exit(-1)
 
     def init_reserve_seckill_request_method(self, fast_mode, is_risk_control):
-        # 提前初始化请求信息
+        # 提前初始化请求信息、方法
         # TODO 阻塞优化
 
         cookie_str = ''
