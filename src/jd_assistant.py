@@ -1047,20 +1047,14 @@ class Assistant(object):
         logger.info("抢购链接获取失败，终止抢购！")
         exit(-1)
 
-    @deprecated
     def request_seckill_url(self, sku_id, server_buy_time):
         """访问商品的抢购链接（用于设置cookie等）
         :param sku_id: 商品id
         :return:
         """
         if not self.seckill_url.get(sku_id):
-            self.seckill_url[sku_id] = self._get_seckill_url(sku_id, server_buy_time)
-        headers = {
-            'User-Agent': self.user_agent,
-            'Host': 'marathon.jd.com',
-            'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
-        }
-        self.sess.get(url=self.seckill_url.get(sku_id), headers=headers, allow_redirects=False, timeout=(0.1, 0.08))
+            self.seckill_url[sku_id] = self.request_info['get_sku_seckill_url_request'](sku_id, server_buy_time)
+        self.request_info['request_sku_seckill_url_request'](sku_id)
 
     @deprecated
     def request_seckill_checkout_page(self, sku_id, num=1):
@@ -1089,18 +1083,8 @@ class Assistant(object):
         :param num: 购买数量，可选参数，默认1个
         :return: 初始化信息组成的dict
         """
-        url = 'https://marathon.jd.com/seckillnew/orderService/pc/init.action'
-        data = {
-            'sku': sku_id,
-            'num': num,
-            'isModifyAddress': 'false',
-        }
-        headers = {
-            'User-Agent': self.user_agent,
-            'Host': 'marathon.jd.com',
-        }
-        resp = self.sess.post(url=url, data=data, headers=headers)
-        return parse_json(resp.text)
+        content = self.request_info['get_seckill_init_info_request'](sku_id, num)
+        return parse_json(content)
 
     @deprecated
     def _gen_seckill_order_data(self, sku_id, num=1):
@@ -1211,7 +1195,6 @@ class Assistant(object):
                 time.sleep(retry_interval)
         return False
 
-    @deprecated
     def exec_seckill(self, sku_id, server_buy_time, retry=4, interval=4, num=1, fast_mode=True):
         """立即抢购
 
@@ -1234,9 +1217,9 @@ class Assistant(object):
             logger.info('第[%s/%s]次尝试抢购商品:%s', count, retry, sku_id)
 
             if not fast_mode:
-                self.request_seckill_checkout_page(sku_id, num)
+                self.request_info['request_seckill_checkout_page_request'](sku_id, num)
 
-            if self.submit_seckill_order(sku_id, server_buy_time, num):
+            if self.request_info['submit_seckill_order_request'](sku_id, server_buy_time, num):
                 return True
             else:
                 logger.info('休息%ss', interval)
@@ -1262,34 +1245,9 @@ class Assistant(object):
 
         self.config = config
 
-        # 1.提前初始化请求信息、方法
-        # TODO 修改
-        time_dict = self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
-        items_dict = parse_sku_id(sku_ids=config.sku_id)
-
-        # TODO 修改
-        # 2.倒计时
-        logger.info('准备抢购商品:%s', list(items_dict.keys()))
-        t = Timer(buy_time=time_dict['realy_buy_time'], sleep_interval=config.sleep_interval,
-                  fast_sleep_interval=config.fast_sleep_interval)
-        if self.config.fast_mode:
-            self.make_seckill_connect()
-            t.start(self.connect_now)
-        else:
-            t.start()
-
-        # 3.执行
-        for sku_id in items_dict:
-            logger.info('开始抢购商品:%s', sku_id)
-            # TODO 修改
-            self.exec_seckill(sku_id, time_dict['server_buy_time'], config.retry, config.interval, int(items_dict[sku_id]), config.fast_mode)
-
-    def init_seckill_request_method(self, fast_mode, is_risk_control):
-        # 提前初始化请求信息、方法
-        config = self.config
+        # 处理时间
         server_buy_time = None
         realy_buy_time = None
-
         if config.sku_buy_time:
             server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
             server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
@@ -1303,7 +1261,333 @@ class Assistant(object):
             realy_buy_time = config.buy_time
         else:
             exit(-1)
-        return {'realy_buy_time': realy_buy_time, 'server_buy_time': server_buy_time}
+        items_dict = parse_sku_id(sku_ids=config.sku_id)
+
+        # 1.提前初始化请求信息、方法
+        # TODO 修改
+        self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
+
+        # TODO 修改
+        # 2.倒计时
+        logger.info('准备抢购商品:%s', list(items_dict.keys()))
+        t = Timer(buy_time=realy_buy_time, sleep_interval=config.sleep_interval,
+                  fast_sleep_interval=config.fast_sleep_interval)
+        if self.config.fast_mode:
+            self.make_seckill_connect()
+            t.start(self.connect_now)
+        else:
+            t.start()
+
+        # 3.执行
+        for sku_id in items_dict:
+            logger.info('开始抢购商品:%s', sku_id)
+            # TODO 修改
+            self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]), config.fast_mode)
+
+    def init_seckill_request_method(self, fast_mode, is_risk_control):
+        # 提前初始化请求信息、方法
+        cookie_str = ''
+        for cookie in iter(self.sess.cookies):
+            cookie_str += f'{cookie.name}={cookie.value};'
+        config = self.config
+
+        # 初始化获取商品抢购链接请求方法
+        get_sku_seckill_url_request_headers = self.headers.copy()
+        if fast_mode:
+            # TODO
+            # get_sku_seckill_url_request_headers['cookie'] = cookie_str
+            # params = {
+            #     'pid': config.sku_id,
+            #     'pcount': config.num,
+            #     'ptype': 1,
+            # }
+            # b_msg = SocketClient.mark_byte_msg(url='https://cart.jd.com/gate.action',
+            #                                    method='GET',
+            #                                    headers=get_sku_seckill_url_request_headers,
+            #                                    params=params)
+
+            def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
+                logger.info('获取抢购链接')
+                # sock = self.socket_list[0]
+                # i = 0
+                # while i < 3:
+                #     try:
+                #         def res_func(conn):
+                #             while True:
+                #                 data = conn.recv(1)
+                #                 logger.info('已接收-为提高抢购速度，已截断响应数据')
+                #                 break
+                #
+                #         sock.connect()
+                #         sock.send(b_msg)
+                #         logger.info('已发送')
+                #         sock.get_http_response(res_func)
+                #         break
+                #     except Exception as e:
+                #         i += 1
+                #         logger.error('获取抢购链接请求异常，开始第 %s 次重试，信息：%s', i, e)
+        else:
+            def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
+                url = 'https://itemko.jd.com/itemShowBtn'
+                payload = {
+                    'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+                    'skuId': sku_id,
+                    'from': 'pc',
+                    '_': str(server_buy_time * 1000),
+                }
+                headers = {
+                    'User-Agent': self.user_agent,
+                    'Host': 'itemko.jd.com',
+                    'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
+                }
+                retry_interval = 0.2
+                retry_count = 0
+
+                while retry_count < 10:
+                    resp = self.sess.get(url=url, headers=headers, params=payload, timeout=(0.1, 0.08))
+                    resp_json = parse_json(resp.text)
+                    if resp_json.get('url'):
+                        # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                        router_url = 'https:' + resp_json.get('url')
+                        # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                        seckill_url = router_url.replace('divide', 'marathon').replace('user_routing', 'captcha.html')
+                        logger.info("抢购链接获取成功: %s", seckill_url)
+                        return seckill_url
+                    else:
+                        retry_count += 1
+                        logger.info("第%s次获取抢购链接失败，%s不是抢购商品或抢购页面暂未刷新，%s秒后重试", retry_count, sku_id, retry_interval)
+                        time.sleep(retry_interval)
+
+                logger.info("抢购链接获取失败，终止抢购！")
+                exit(-1)
+        self.request_info['get_sku_seckill_url_request'] = get_sku_seckill_url_request
+
+        # 初始化访问商品抢购链接请求方法（用于设置cookie等）
+        request_sku_seckill_url_request_headers = self.headers.copy()
+        if fast_mode:
+            # TODO
+            # request_sku_seckill_url_request_headers['cookie'] = cookie_str
+            # params = {
+            #     'pid': config.sku_id,
+            #     'pcount': config.num,
+            #     'ptype': 1,
+            # }
+            # b_msg = SocketClient.mark_byte_msg(url='https://cart.jd.com/gate.action',
+            #                                    method='GET',
+            #                                    headers=request_sku_seckill_url_request_headers,
+            #                                    params=params)
+
+            def request_sku_seckill_url_request(sku_id):
+                logger.info('访问商品抢购链接请求')
+                # sock = self.socket_list[0]
+                # i = 0
+                # while i < 3:
+                #     try:
+                #         def res_func(conn):
+                #             while True:
+                #                 data = conn.recv(1)
+                #                 logger.info('已接收-为提高抢购速度，已截断响应数据')
+                #                 break
+                #
+                #         sock.connect()
+                #         sock.send(b_msg)
+                #         logger.info('已发送')
+                #         sock.get_http_response(res_func)
+                #         break
+                #     except Exception as e:
+                #         i += 1
+                #         logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
+        else:
+            def request_sku_seckill_url_request(sku_id):
+                headers = {
+                    'User-Agent': self.user_agent,
+                    'Host': 'marathon.jd.com',
+                    'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
+                }
+                self.sess.get(url=self.seckill_url.get(sku_id), headers=headers, allow_redirects=False,
+                              timeout=(0.1, 0.08))
+        self.request_info['request_sku_seckill_url_request'] = request_sku_seckill_url_request
+
+        # 初始化访问抢购订单结算页面请求方法
+        request_seckill_checkout_page_request_headers = self.headers.copy()
+        # if fast_mode and is_risk_control is False:
+        if fast_mode:
+            # TODO 从上次请求头中提取cookies并更新
+            request_seckill_checkout_page_request_headers['cookie'] = cookie_str
+
+            def request_seckill_checkout_page_request(sku_id, num):
+                logger.info('抢购订单结算页面请求')
+                # i = 0
+                # while i < 3:
+                #     try:
+                #         def res_func(conn):
+                #             while True:
+                #                 data = conn.recv(1)
+                #                 logger.info('已接收-为提高抢购速度，已截断响应数据')
+                #                 break
+                #
+                #         self.socket_list[1].send_http_request(
+                #             url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
+                #             headers=request_seckill_checkout_page_request_headers, params=params, res_func=res_func)
+                #         break
+                #     except Exception as e:
+                #         i += 1
+                #         logger.error('抢购订单结算页面请求连接超时，开始第 %s 次重试，信息：%s', i, e)
+        else:
+            def request_seckill_checkout_page_request(sku_id, num):
+                url = 'https://marathon.jd.com/seckill/seckill.action'
+                payload = {
+                    'skuId': sku_id,
+                    'num': num,
+                    'rid': int(time.time())
+                }
+                headers = {
+                    'User-Agent': self.user_agent,
+                    'Host': 'marathon.jd.com',
+                    'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
+                }
+                self.sess.get(url=url, params=payload, headers=headers, timeout=(0.1, 0.08))
+        self.request_info['request_seckill_checkout_page_request'] = request_seckill_checkout_page_request
+
+        # 初始化获取秒杀初始化信息请求方法（包括：地址，发票，token）
+        get_seckill_init_info_request_headers = self.headers.copy()
+        if fast_mode:
+            # TODO 继续使用上次请求的cookies
+            get_seckill_init_info_request_headers['cookie'] = cookie_str
+
+            def get_seckill_init_info_request(sku_id, num=1):
+                logger.info('获取秒杀初始化信息')
+                # i = 0
+                # while i < 3:
+                #     try:
+                #         def res_func(conn):
+                #             while True:
+                #                 data = conn.recv(1)
+                #                 logger.info('已接收-为提高抢购速度，已截断响应数据')
+                #                 break
+                #
+                #         self.socket_list[1].send_http_request(
+                #             url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
+                #             headers=request_seckill_checkout_page_request_headers, params=params, res_func=res_func)
+                #         break
+                #     except Exception as e:
+                #         i += 1
+                #         logger.error('获取秒杀初始化信息请求连接超时，开始第 %s 次重试，信息：%s', i, e)
+        else:
+            def get_seckill_init_info_request(sku_id, num=1):
+                url = 'https://marathon.jd.com/seckillnew/orderService/pc/init.action'
+                data = {
+                    'sku': sku_id,
+                    'num': num,
+                    'isModifyAddress': 'false',
+                }
+                headers = {
+                    'User-Agent': self.user_agent,
+                    'Host': 'marathon.jd.com',
+                }
+                return self.sess.post(url=url, data=data, headers=headers).text
+        self.request_info['get_seckill_init_info_request'] = get_seckill_init_info_request
+
+        # 初始化提交抢购（秒杀）订单请求方法
+        submit_seckill_order_request_headers = self.headers.copy()
+        if fast_mode:
+            # TODO 继续使用上次请求的cookies
+            # submit_seckill_order_request_headers['cookie'] = cookie_str
+
+            def submit_seckill_order_request(sku_id, server_buy_time=int(time.time()), num=1):
+                logger.info('提交抢购（秒杀）订单请求')
+                # submit_seckill_order_request_data['riskControl'] = self.risk_control
+                # try:
+                #     response_data = self.socket_list[2].send_http_request(
+                #         url='https://trade.jd.com/shopping/order/submitOrder.action',
+                #         method='POST',
+                #         headers=submit_seckill_order_request_headers,
+                #         data=submit_seckill_order_request_data)
+                #     if response_data:
+                #         try:
+                #             resp_json = json.loads(response_data)
+                #             if resp_json.get('success'):
+                #                 order_id = resp_json.get('orderId')
+                #                 logger.info('订单提交成功! 订单号：%s', order_id)
+                #                 if self.send_message:
+                #                     self.messenger.send(text='jd-assistant 订单提交成功', desp='订单号：%s' % order_id)
+                #                 return True
+                #             else:
+                #                 message, result_code = resp_json.get('message'), resp_json.get('resultCode')
+                #                 if result_code == 0:
+                #                     message = message + '(下单失败)'
+                #                     # self._save_invoice()
+                #                     # message = message + '(下单商品可能为第三方商品，将切换为普通发票进行尝试)'
+                #                 elif result_code == 60077:
+                #                     message = message + '(可能是购物车为空 或 未勾选购物车中商品)'
+                #                 elif result_code == 60123:
+                #                     message = message + '(需要在config.ini文件中配置支付密码)'
+                #                 elif result_code == 600158:
+                #                     logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
+                #                     logger.info(f'很抱歉，您抢购的商品无货！本次抢购结束')
+                #                     return True
+                #                 logger.info('订单提交失败, 错误码：%s, 返回信息：%s', result_code, message)
+                #                 logger.info(f'响应数据：\n{resp_json}')
+                #                 return False
+                #         except Exception:
+                #             logger.info('数据解析异常，响应数据：\n %s', response_data)
+                #             return False
+                #     else:
+                #         logger.info('下单请求异常')
+                #         return False
+                # except Exception as e:
+                #     logger.error(e)
+                #     return False
+        else:
+            def submit_seckill_order_request(sku_id, server_buy_time=int(time.time()), num=1):
+                url = 'https://marathon.jd.com/seckillnew/orderService/pc/submitOrder.action'
+                payload = {
+                    'skuId': sku_id,
+                }
+                if not self.seckill_order_data.get(sku_id):
+                    self.seckill_order_data[sku_id] = self._gen_seckill_order_data(sku_id, num)
+
+                headers = {
+                    'User-Agent': self.user_agent,
+                    'Host': 'marathon.jd.com',
+                    'Referer': 'https://marathon.jd.com/seckill/seckill.action?skuId={0}&num={1}&rid={2}'.format(
+                        sku_id, num, server_buy_time),
+                }
+
+                retry_interval = 0.1
+                retry_count = 0
+
+                while retry_count < 10:
+                    resp_json = None
+                    try:
+                        resp = self.sess.post(url=url, headers=headers, params=payload,
+                                              data=self.seckill_order_data.get(sku_id), timeout=(0.1, 0.08))
+                        logger.info(resp.text)
+                        resp_json = parse_json(resp.text)
+                    except Exception as e:
+                        logger.error('秒杀请求出错：%s', str(e))
+                        retry_count += 1
+                        time.sleep(retry_interval)
+                    # 返回信息
+                    # 抢购失败：
+                    # {'errorMessage': '很遗憾没有抢到，再接再厉哦。', 'orderId': 0, 'resultCode': 60074, 'skuId': 0, 'success': False}
+                    # {'errorMessage': '抱歉，您提交过快，请稍后再提交订单！', 'orderId': 0, 'resultCode': 60017, 'skuId': 0, 'success': False}
+                    # {'errorMessage': '系统正在开小差，请重试~~', 'orderId': 0, 'resultCode': 90013, 'skuId': 0, 'success': False}
+                    # 抢购成功：
+                    # {"appUrl":"xxxxx","orderId":820227xxxxx,"pcUrl":"xxxxx","resultCode":0,"skuId":0,"success":true,"totalMoney":"xxxxx"}
+
+                    if resp_json.get('success'):
+                        order_id = resp_json.get('orderId')
+                        total_money = resp_json.get('totalMoney')
+                        pay_url = 'https:' + resp_json.get('pcUrl')
+                        logger.info('抢购成功，订单号: %s, 总价: %s, 电脑端付款链接: %s', order_id, total_money, pay_url)
+                        return True
+                    else:
+                        logger.info('抢购失败，返回信息: %s', resp_json)
+                        retry_count += 1
+                        time.sleep(retry_interval)
+                return False
+        self.request_info['submit_seckill_order_request'] = submit_seckill_order_request
 
     def make_seckill_connect(self):
         # TODO 创建连接类
@@ -1498,8 +1782,6 @@ class Assistant(object):
 
     def init_reserve_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息、方法
-        # TODO 阻塞优化
-
         cookie_str = ''
         for cookie in iter(self.sess.cookies):
             cookie_str += f'{cookie.name}={cookie.value};'
