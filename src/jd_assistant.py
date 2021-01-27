@@ -1359,7 +1359,7 @@ class Assistant(object):
         self.clear_cart()
 
         # 提前初始化请求信息
-        self.init_request_method(config.fast_mode, config.is_risk_control)
+        self.init_reserve_seckill_request_method(config.fast_mode, config.is_risk_control)
 
         logger.info('准备抢购商品id为：%s', config.sku_id)
 
@@ -1367,19 +1367,45 @@ class Assistant(object):
                   fast_sleep_interval=config.fast_sleep_interval)
 
         if self.config.fast_mode:
-            sock1 = SocketClient(443, 'cart.jd.com')
-            # TODO socket配置
-            self.socket_list.append(sock1)
-            sock2 = SocketClient(443, 'trade.jd.com')
-            # TODO socket配置
-            self.socket_list.append(sock2)
-            self.socket_list.append(SocketClient(443, 'trade.jd.com'))
+            self.make_reserve_seckill_connect()
             t.start(self.connect_now)
         else:
             t.start()
 
-        self.start_seckill_now()
+        # 开始抢购
+        config = self.config
 
+        # TODO 流程修改
+        if config.is_pass_cart is not True:
+            sku_ids = {config.sku_id: config.num}
+            add_cart_request = self.request_info['add_cart_request']
+
+            for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
+                payload = {
+                    'pid': sku_id,
+                    'pcount': count,
+                    'ptype': 1,
+                }
+                add_cart_request(payload)
+
+        # 获取订单结算页面信息
+        self.get_checkout_page_detail()
+
+        retry = config.retry
+        interval = config.interval
+        for count in range(1, retry + 1):
+            logger.info('第[%s/%s]次尝试提交订单', count, retry)
+            if self.submit_order():
+                break
+            logger.info('休息%ss', interval)
+            time.sleep(interval)
+        else:
+            logger.info('执行结束，提交订单失败！')
+
+        if self.config.fast_mode:
+            self.close_now()
+
+    # 初始化下单必须参数
     def init_order_request_info(self):
         # 获取下单必须参数
 
@@ -1443,7 +1469,7 @@ class Assistant(object):
             logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
             exit(-1)
 
-    def init_request_method(self, fast_mode, is_risk_control):
+    def init_reserve_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息
         # TODO 阻塞优化
 
@@ -1708,6 +1734,15 @@ class Assistant(object):
 
         self.request_info['submit_order_request'] = submit_order_request
 
+    def make_reserve_seckill_connect(self):
+        sock1 = SocketClient(443, 'cart.jd.com')
+        # TODO socket配置
+        self.socket_list.append(sock1)
+        sock2 = SocketClient(443, 'trade.jd.com')
+        # TODO socket配置
+        self.socket_list.append(sock2)
+        self.socket_list.append(SocketClient(443, 'trade.jd.com'))
+
     def connect_now(self):
         for sock in self.socket_list:
             sock.connect()
@@ -1715,37 +1750,3 @@ class Assistant(object):
     def close_now(self):
         for sock in self.socket_list:
             sock.close_client()
-
-    def start_seckill_now(self):
-        # 开始抢购
-        config = self.config
-
-        # TODO 流程修改
-        if config.is_pass_cart is not True:
-            sku_ids = {config.sku_id: config.num}
-            add_cart_request = self.request_info['add_cart_request']
-
-            for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
-                payload = {
-                    'pid': sku_id,
-                    'pcount': count,
-                    'ptype': 1,
-                }
-                add_cart_request(payload)
-
-        # 获取订单结算页面信息
-        self.get_checkout_page_detail()
-
-        retry = config.retry
-        interval = config.interval
-        for count in range(1, retry + 1):
-            logger.info('第[%s/%s]次尝试提交订单', count, retry)
-            if self.submit_order():
-                break
-            logger.info('休息%ss', interval)
-            time.sleep(interval)
-        else:
-            logger.info('执行结束，提交订单失败！')
-
-        if self.config.fast_mode:
-            self.close_now()
