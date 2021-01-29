@@ -12,10 +12,11 @@ from log import logger
 
 class Timer(object):
 
-    def __init__(self, buy_time, sleep_interval=1, fast_sleep_interval=0.01):
+    def __init__(self, buy_time, sleep_interval=1, fast_sleep_interval=0.01, is_sync=True):
 
         # 同步京东服务器时间
-        self.setSystemTime()
+        if is_sync is True:
+            Timer.setSystemTime()
 
         # '2018-09-28 22:45:50.000'
         self.buy_time = datetime.strptime(buy_time, "%Y-%m-%d %H:%M:%S.%f")
@@ -50,7 +51,8 @@ class Timer(object):
                     # TODO 保活
                     time.sleep(sleep_interval)
 
-    def setSystemTime(self):
+    @staticmethod
+    def setSystemTime():
         url = 'https://a.jd.com//ajax/queryServerData.html'
 
         session = requests.session()

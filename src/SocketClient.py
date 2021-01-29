@@ -33,6 +33,7 @@ class SocketClient(object):
             self.domain = domain
         else:
             self.domain = None
+        self.http_response = None
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
@@ -65,6 +66,7 @@ class SocketClient(object):
         self.is_connected = True
         self.domain = connect_domain
 
+    @staticmethod
     def mark_byte_msg(url, method='GET', params=None, data=None, headers=None):
         # http协议处理
         if 'http://' in url:
@@ -124,7 +126,10 @@ class SocketClient(object):
     def send(self, byte_msg: bytes):
         self.sock.send(byte_msg)
 
-    def get_http_response(self, recv_func=None):
+    def get_http_response(self):
+        return self.http_response
+
+    def get_http_response_data(self, recv_func=None):
         sock = self.sock
         charset = 'utf-8'
         _UNKNOWN = 'UNKNOWN'
@@ -132,7 +137,6 @@ class SocketClient(object):
         if recv_func:
             return recv_func(sock)
         else:
-            http_response = None
             r = client.HTTPResponse(sock)
             try:
                 try:
@@ -141,7 +145,7 @@ class SocketClient(object):
                     self.close_client()
                     logger.error('拉取数据连接异常')
                 will_close = r.will_close
-                http_response = HTTPResponse.from_httplib(r)
+                self.http_response = HTTPResponse.from_httplib(r)
                 if will_close and will_close != _UNKNOWN:
                     self.close_client()
             except Exception as e:
@@ -151,7 +155,10 @@ class SocketClient(object):
                 # print('response：')
                 # print(response.decode(charset))
                 # 保持连接
-                return http_response.data.decode(charset)
+                if self.http_response is not None:
+                    return self.http_response.data.decode(charset)
+                else:
+                    return None
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
         # http协议处理
@@ -168,13 +175,14 @@ class SocketClient(object):
         url = url if '/' in url else url + '/'
         url_split = url.split('/', 1)
         host = url_split[0]
+        self.http_response = None
         self.connect(host)
         # 发送报文
         # print(byte_msg)
         self.send(byte_msg)
         logger.info('已发送')
         # 读取报文
-        return self.get_http_response(res_func)
+        return self.get_http_response_data(res_func)
 
     def close_client(self):
         self.sock.close()
