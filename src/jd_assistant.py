@@ -1333,6 +1333,7 @@ class Assistant(object):
                 #         logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
                 resp = sock.send_http_request(url=self.seckill_url.get(sku_id), method='GET',
                                               headers=request_sku_seckill_url_request_headers)
+                # cookies.merge_cookies(self.sess.cookies, )
                 # TODO
         else:
             def request_sku_seckill_url_request(sku_id):
