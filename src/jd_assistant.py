@@ -1249,8 +1249,9 @@ class Assistant(object):
                 sock = self.socket_list[0]
 
                 while retry_count < 10:
-                    resp_data = sock.send_http_request(url='https://itemko.jd.com/itemShowBtn', method='GET',
-                                                       headers=get_sku_seckill_url_request_headers, params=payload)
+                    sock.send_http_request(url='https://itemko.jd.com/itemShowBtn', method='GET',
+                                           headers=get_sku_seckill_url_request_headers, params=payload)
+                    resp_data = sock.get_http_response_data()
                     resp_json = parse_json(resp_data)
                     if resp_json.get('url'):
                         # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
@@ -1305,21 +1306,14 @@ class Assistant(object):
         # 初始化访问商品抢购链接请求方法（用于设置cookie等）
         request_sku_seckill_url_request_headers = self.headers.copy()
         if fast_mode:
-            # TODO
-            # request_sku_seckill_url_request_headers['cookie'] = cookie_str
-            # params = {
-            #     'pid': config.sku_id,
-            #     'pcount': config.num,
-            #     'ptype': 1,
-            # }
-            # b_msg = SocketClient.mark_byte_msg(url='https://cart.jd.com/gate.action',
-            #                                    method='GET',
-            #                                    headers=request_sku_seckill_url_request_headers,
-            #                                    params=params)
+            # 从请求头中提取cookies并更新
+            request_sku_seckill_url_request_headers['cookie'] = cookie_str
+            request_sku_seckill_url_request_headers['Host'] = 'marathon.jd.com'
 
             def request_sku_seckill_url_request(sku_id):
                 logger.info('访问商品抢购链接请求')
-                # sock = self.socket_list[0]
+                request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
+                sock = self.socket_list[1]
                 # i = 0
                 # while i < 3:
                 #     try:
@@ -1337,6 +1331,9 @@ class Assistant(object):
                 #     except Exception as e:
                 #         i += 1
                 #         logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
+                resp = sock.send_http_request(url=self.seckill_url.get(sku_id), method='GET',
+                                              headers=request_sku_seckill_url_request_headers)
+                # TODO
         else:
             def request_sku_seckill_url_request(sku_id):
                 headers = {
@@ -1743,7 +1740,7 @@ class Assistant(object):
                         sock.connect()
                         sock.send(b_msg)
                         logger.info('已发送')
-                        sock.get_http_response_data(res_func)
+                        sock.get_http_response(res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1883,12 +1880,14 @@ class Assistant(object):
             def submit_order_request():
                 submit_order_request_data['riskControl'] = self.risk_control
                 logger.info('提交订单请求')
+                sock = self.socket_list[2]
                 try:
-                    response_data = self.socket_list[2].send_http_request(
+                    sock.send_http_request(
                         url='https://trade.jd.com/shopping/order/submitOrder.action',
                         method='POST',
                         headers=submit_order_request_headers,
                         data=submit_order_request_data)
+                    response_data = sock.get_http_response_data()
                     if response_data:
                         try:
                             resp_json = json.loads(response_data)
@@ -1974,8 +1973,16 @@ class Assistant(object):
         self.request_info['submit_order_request'] = submit_order_request
 
     def make_seckill_connect(self):
-        # TODO 创建连接类
+        # 获取商品抢购链接请求
         self.socket_list.append(SocketClient(443, 'itemko.jd.com'))
+        # 访问商品抢购链接请求
+        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
+        # 访问抢购订单结算页面请求方法
+        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
+        # 获取秒杀初始化信息请求
+        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
+        # 提交抢购（秒杀）订单请求
+        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
 
     def make_reserve_seckill_connect(self):
         self.socket_list.append(SocketClient(443, 'cart.jd.com'))

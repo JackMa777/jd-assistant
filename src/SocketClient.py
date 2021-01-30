@@ -2,7 +2,6 @@ import logging
 import socket
 import ssl
 from http import client
-from typing import Union
 
 from urllib3 import HTTPResponse
 
@@ -33,7 +32,7 @@ class SocketClient(object):
             self.domain = domain
         else:
             self.domain = None
-        self.http_response = None
+        self.data = None
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
@@ -126,13 +125,14 @@ class SocketClient(object):
     def send(self, byte_msg: bytes):
         self.sock.send(byte_msg)
 
-    def get_http_response(self):
-        return self.http_response
+    def get_http_response_data(self):
+        return self.data
 
-    def get_http_response_data(self, recv_func=None):
+    def get_http_response(self, recv_func=None):
         sock = self.sock
         charset = 'utf-8'
         _UNKNOWN = 'UNKNOWN'
+        http_response = None
         # 接收html字节数据
         if recv_func:
             return recv_func(sock)
@@ -145,7 +145,7 @@ class SocketClient(object):
                     self.close_client()
                     logger.error('拉取数据连接异常')
                 will_close = r.will_close
-                self.http_response = HTTPResponse.from_httplib(r)
+                http_response = HTTPResponse.from_httplib(r)
                 if will_close and will_close != _UNKNOWN:
                     self.close_client()
             except Exception as e:
@@ -155,8 +155,9 @@ class SocketClient(object):
                 # print('response：')
                 # print(response.decode(charset))
                 # 保持连接
-                if self.http_response is not None:
-                    return self.http_response.data.decode(charset)
+                if http_response is not None:
+                    self.data = http_response.data.decode(charset)
+                    return http_response
                 else:
                     return None
 
@@ -175,14 +176,14 @@ class SocketClient(object):
         url = url if '/' in url else url + '/'
         url_split = url.split('/', 1)
         host = url_split[0]
-        self.http_response = None
+        self.data = None
         self.connect(host)
         # 发送报文
         # print(byte_msg)
         self.send(byte_msg)
         logger.info('已发送')
         # 读取报文
-        return self.get_http_response_data(res_func)
+        return self.get_http_response(res_func)
 
     def close_client(self):
         self.sock.close()
