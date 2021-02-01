@@ -70,6 +70,7 @@ class Assistant(object):
         self.nick_name = ''
         self.is_login = False
         self.sess = requests.session()
+        self.cookies_str = None
         # 请求信息
         self.request_info = dict()
         try:
@@ -1227,13 +1228,12 @@ class Assistant(object):
 
     def init_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息、方法
-        cookie_str = self.get_cookies_str()
+        self.get_and_update_cookies_str()
         config = self.config
 
         # 初始化获取商品抢购链接请求方法
         get_sku_seckill_url_request_headers = self.headers.copy()
         if fast_mode:
-            get_sku_seckill_url_request_headers['cookie'] = cookie_str
             get_sku_seckill_url_request_headers['Host'] = 'itemko.jd.com'
 
             def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
@@ -1251,7 +1251,8 @@ class Assistant(object):
 
                 while retry_count < 10:
                     resp = sock.send_http_request(url='https://itemko.jd.com/itemShowBtn', method='GET',
-                                                  headers=get_sku_seckill_url_request_headers, params=payload)
+                                                  headers=get_sku_seckill_url_request_headers, params=payload
+                                                  , cookies=self.cookies_str)
                     resp_data = resp.body
                     resp_json = parse_json(resp_data)
                     if resp_json.get('url'):
@@ -1307,7 +1308,6 @@ class Assistant(object):
         # 初始化访问商品抢购链接请求方法（用于设置cookie等）
         request_sku_seckill_url_request_headers = self.headers.copy()
         if fast_mode:
-            request_sku_seckill_url_request_headers['cookie'] = cookie_str
             request_sku_seckill_url_request_headers['Host'] = 'marathon.jd.com'
 
             def request_sku_seckill_url_request(sku_id):
@@ -1315,10 +1315,10 @@ class Assistant(object):
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
                 resp = self.socket_list[1].send_http_request(url=self.seckill_url.get(sku_id), method='GET',
                                                              headers=request_sku_seckill_url_request_headers,
-                                                             cookies=cookie_str)
+                                                             cookies=self.cookies_str)
                 # 从请求头中提取cookies并更新
                 cookie_util.merge_cookies(self.sess.cookies, resp)
-                # cookie_str = self.get_cookies_str()
+                self.get_and_update_cookies_str()
         else:
             def request_sku_seckill_url_request(sku_id):
                 headers = {
@@ -1335,7 +1335,7 @@ class Assistant(object):
         # if fast_mode and is_risk_control is False:
         if fast_mode:
             # TODO 从上次请求头中提取cookies并更新
-            request_seckill_checkout_page_request_headers['cookie'] = cookie_str
+            request_seckill_checkout_page_request_headers['cookie'] = self.cookies_str
 
             def request_seckill_checkout_page_request(sku_id, num):
                 logger.info('抢购订单结算页面请求')
@@ -1355,6 +1355,10 @@ class Assistant(object):
                 #     except Exception as e:
                 #         i += 1
                 #         logger.error('抢购订单结算页面请求连接超时，开始第 %s 次重试，信息：%s', i, e)
+                # TODO cookie需使用self.cookies_str
+                resp = None
+                cookie_util.merge_cookies(self.sess.cookies, resp)
+                self.get_and_update_cookies_str()
         else:
             def request_seckill_checkout_page_request(sku_id, num):
                 url = 'https://marathon.jd.com/seckill/seckill.action'
@@ -1375,7 +1379,7 @@ class Assistant(object):
         get_seckill_init_info_request_headers = self.headers.copy()
         if fast_mode:
             # TODO 继续使用上次请求的cookies
-            get_seckill_init_info_request_headers['cookie'] = cookie_str
+            get_seckill_init_info_request_headers['cookie'] = self.cookies_str
 
             def get_seckill_init_info_request(sku_id, num=1):
                 logger.info('获取秒杀初始化信息')
@@ -1395,6 +1399,10 @@ class Assistant(object):
                 #     except Exception as e:
                 #         i += 1
                 #         logger.error('获取秒杀初始化信息请求连接超时，开始第 %s 次重试，信息：%s', i, e)
+                # TODO cookie需使用self.cookies_str
+                resp = None
+                cookie_util.merge_cookies(self.sess.cookies, resp)
+                self.get_and_update_cookies_str()
         else:
             def get_seckill_init_info_request(sku_id, num=1):
                 url = 'https://marathon.jd.com/seckillnew/orderService/pc/init.action'
@@ -1460,6 +1468,10 @@ class Assistant(object):
                 # except Exception as e:
                 #     logger.error(e)
                 #     return False
+                # TODO cookie需使用self.cookies_str
+                resp = None
+                cookie_util.merge_cookies(self.sess.cookies, resp)
+                self.get_and_update_cookies_str()
         else:
             def submit_seckill_order_request(sku_id, server_buy_time=int(time.time()), num=1):
                 url = 'https://marathon.jd.com/seckillnew/orderService/pc/submitOrder.action'
@@ -1982,8 +1994,9 @@ class Assistant(object):
         for sock in self.socket_list:
             sock.close_client()
 
-    def get_cookies_str(self):
+    def get_and_update_cookies_str(self):
         cookie_array = []
         for cookie in iter(self.sess.cookies):
             cookie_array.append(f'{cookie.name}={cookie.value};')
-        return ''.join(cookie_array)
+        self.cookies_str = ''.join(cookie_array)
+        return self.cookies_str
