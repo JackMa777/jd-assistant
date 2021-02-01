@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 import CustomBrowser
 import address_util
+import cookie_util
 from SocketClient import SocketClient
 from config import global_config
 from exception import AsstException
@@ -1249,9 +1250,9 @@ class Assistant(object):
                 sock = self.socket_list[0]
 
                 while retry_count < 10:
-                    sock.send_http_request(url='https://itemko.jd.com/itemShowBtn', method='GET',
-                                           headers=get_sku_seckill_url_request_headers, params=payload)
-                    resp_data = sock.get_http_response_data()
+                    resp = sock.send_http_request(url='https://itemko.jd.com/itemShowBtn', method='GET',
+                                                  headers=get_sku_seckill_url_request_headers, params=payload)
+                    resp_data = resp.body
                     resp_json = parse_json(resp_data)
                     if resp_json.get('url'):
                         # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
@@ -1306,35 +1307,18 @@ class Assistant(object):
         # 初始化访问商品抢购链接请求方法（用于设置cookie等）
         request_sku_seckill_url_request_headers = self.headers.copy()
         if fast_mode:
-            # 从请求头中提取cookies并更新
             request_sku_seckill_url_request_headers['cookie'] = cookie_str
             request_sku_seckill_url_request_headers['Host'] = 'marathon.jd.com'
 
             def request_sku_seckill_url_request(sku_id):
                 logger.info('访问商品抢购链接请求')
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
-                sock = self.socket_list[1]
-                # i = 0
-                # while i < 3:
-                #     try:
-                #         def res_func(conn):
-                #             while True:
-                #                 data = conn.recv(1)
-                #                 logger.info('已接收-为提高抢购速度，已截断响应数据')
-                #                 break
-                #
-                #         sock.connect()
-                #         sock.send(b_msg)
-                #         logger.info('已发送')
-                #         sock.get_http_response(res_func)
-                #         break
-                #     except Exception as e:
-                #         i += 1
-                #         logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
-                resp = sock.send_http_request(url=self.seckill_url.get(sku_id), method='GET',
-                                              headers=request_sku_seckill_url_request_headers)
-                # cookies.merge_cookies(self.sess.cookies, )
-                # TODO
+                resp = self.socket_list[1].send_http_request(url=self.seckill_url.get(sku_id), method='GET',
+                                                             headers=request_sku_seckill_url_request_headers,
+                                                             cookies=cookie_str)
+                # 从请求头中提取cookies并更新
+                cookie_util.merge_cookies(self.sess.cookies, resp)
+                # cookie_str = self.get_cookies_str()
         else:
             def request_sku_seckill_url_request(sku_id):
                 headers = {
@@ -1883,12 +1867,12 @@ class Assistant(object):
                 logger.info('提交订单请求')
                 sock = self.socket_list[2]
                 try:
-                    sock.send_http_request(
+                    resp = sock.send_http_request(
                         url='https://trade.jd.com/shopping/order/submitOrder.action',
                         method='POST',
                         headers=submit_order_request_headers,
                         data=submit_order_request_data)
-                    response_data = sock.get_http_response_data()
+                    response_data = resp.body
                     if response_data:
                         try:
                             resp_json = json.loads(response_data)

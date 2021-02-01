@@ -5,6 +5,8 @@ from http import client
 
 from urllib3 import HTTPResponse
 
+import cookie_util
+
 logger = logging.getLogger()
 
 DEFAULT_HEADERS = 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
@@ -32,7 +34,6 @@ class SocketClient(object):
             self.domain = domain
         else:
             self.domain = None
-        self.data = None
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
@@ -66,7 +67,7 @@ class SocketClient(object):
         self.domain = connect_domain
 
     @staticmethod
-    def mark_byte_msg(url, method='GET', params=None, data=None, headers=None):
+    def mark_byte_msg(url, method='GET', params=None, data=None, headers=None, cookies=None):
         # http协议处理
         if 'http://' in url:
             url = url.replace('http://', '')
@@ -91,7 +92,10 @@ class SocketClient(object):
         if isinstance(headers, dict):
             headers_list = []
             for key, value in headers.items():
-                headers_list.append(f'{key}: {value}\r\n')
+                if key.lower() == 'cookie' and cookies is None:
+                    cookies = value
+                else:
+                    headers_list.append(f'{key}: {value}\r\n')
             headers_str = ''.join(headers_list)
         elif isinstance(headers, str):
             headers_str = headers
@@ -99,6 +103,8 @@ class SocketClient(object):
             # 默认添加请求头
             headers_str = f'{DEFAULT_HEADERS}\r\n'
         msg_list = [f'{method} {"".join(uri_list)} HTTP/1.1\r\nHost: {host}\r\n']
+        if cookies is not None and cookies != '':
+            headers_str = f'{headers_str}Cookie: {cookie_util.get_cookies_str(cookies)}\r\n'
         if data:
             content_len = 0
             data_bytes = None
@@ -124,9 +130,6 @@ class SocketClient(object):
 
     def send(self, byte_msg: bytes):
         self.sock.send(byte_msg)
-
-    def get_http_response_data(self):
-        return self.data
 
     def get_http_response(self, recv_func=None):
         sock = self.sock
@@ -156,27 +159,26 @@ class SocketClient(object):
                 # print(response.decode(charset))
                 # 保持连接
                 if http_response is not None:
-                    self.data = http_response.data.decode(charset)
+                    setattr(http_response, "body", http_response.data.decode(charset))
                     return http_response
                 else:
                     return None
 
-    def send_http_request(self, url, method='GET', params=None, data=None, headers=None, res_func=None):
+    def send_http_request(self, url, method='GET', params=None, data=None, headers=None, cookies=None, res_func=None):
         # http协议处理
+        tmp_url = None
         if 'http://' in url:
             if self.conn_port != SocketClient.HTTP:
                 raise Exception(f"该socket初始端口为:{self.conn_port}，请输入https地址")
-            url = url.replace('http://', '')
+            tmp_url = url.replace('http://', '')
         # https协议处理
         if 'https://' in url:
             if self.conn_port != SocketClient.HTTPS:
                 raise Exception(f"该socket初始端口为:{self.conn_port}，请输入http地址")
-            url = url.replace('https://', '')
-        byte_msg = SocketClient.mark_byte_msg(url, method, params, data, headers)
-        url = url if '/' in url else url + '/'
-        url_split = url.split('/', 1)
-        host = url_split[0]
-        self.data = None
+            tmp_url = url.replace('https://', '')
+        byte_msg = SocketClient.mark_byte_msg(url, method, params, data, headers, cookies)
+        tmp_url = tmp_url if '/' in tmp_url else tmp_url + '/'
+        host = tmp_url.split('/', 1)[0]
         self.connect(host)
         # 发送报文
         # print(byte_msg)
