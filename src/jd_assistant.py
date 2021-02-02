@@ -1317,7 +1317,7 @@ class Assistant(object):
                                                              headers=request_sku_seckill_url_request_headers,
                                                              cookies=self.cookies_str)
                 # 从请求头中提取cookies并更新
-                cookie_util.merge_cookies(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
                 self.get_and_update_cookies_str()
         else:
             def request_sku_seckill_url_request(sku_id):
@@ -1357,7 +1357,7 @@ class Assistant(object):
                 #         logger.error('抢购订单结算页面请求连接超时，开始第 %s 次重试，信息：%s', i, e)
                 # TODO cookie需使用self.cookies_str
                 resp = None
-                cookie_util.merge_cookies(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
                 self.get_and_update_cookies_str()
         else:
             def request_seckill_checkout_page_request(sku_id, num):
@@ -1401,7 +1401,7 @@ class Assistant(object):
                 #         logger.error('获取秒杀初始化信息请求连接超时，开始第 %s 次重试，信息：%s', i, e)
                 # TODO cookie需使用self.cookies_str
                 resp = None
-                cookie_util.merge_cookies(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
                 self.get_and_update_cookies_str()
         else:
             def get_seckill_init_info_request(sku_id, num=1):
@@ -1470,7 +1470,7 @@ class Assistant(object):
                 #     return False
                 # TODO cookie需使用self.cookies_str
                 resp = None
-                cookie_util.merge_cookies(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
                 self.get_and_update_cookies_str()
         else:
             def submit_seckill_order_request(sku_id, server_buy_time=int(time.time()), num=1):
