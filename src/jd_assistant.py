@@ -1313,11 +1313,12 @@ class Assistant(object):
             def request_sku_seckill_url_request(sku_id):
                 logger.info('访问商品抢购链接请求')
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
-                resp = self.socket_list[1].send_http_request(url=self.seckill_url.get(sku_id), method='GET',
+                url = self.seckill_url.get(sku_id)
+                resp = self.socket_list[1].send_http_request(url=url, method='GET',
                                                              headers=request_sku_seckill_url_request_headers,
                                                              cookies=self.cookies_str)
                 # 从请求头中提取cookies并更新
-                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
         else:
             def request_sku_seckill_url_request(sku_id):
@@ -1339,6 +1340,7 @@ class Assistant(object):
 
             def request_seckill_checkout_page_request(sku_id, num):
                 logger.info('抢购订单结算页面请求')
+                url = 'https://marathon.jd.com/seckill/seckill.action'
                 # i = 0
                 # while i < 3:
                 #     try:
@@ -1357,7 +1359,7 @@ class Assistant(object):
                 #         logger.error('抢购订单结算页面请求连接超时，开始第 %s 次重试，信息：%s', i, e)
                 # TODO cookie需使用self.cookies_str
                 resp = None
-                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
         else:
             def request_seckill_checkout_page_request(sku_id, num):
@@ -1383,6 +1385,7 @@ class Assistant(object):
 
             def get_seckill_init_info_request(sku_id, num=1):
                 logger.info('获取秒杀初始化信息')
+                url = 'https://marathon.jd.com/seckillnew/orderService/pc/init.action'
                 # i = 0
                 # while i < 3:
                 #     try:
@@ -1401,7 +1404,7 @@ class Assistant(object):
                 #         logger.error('获取秒杀初始化信息请求连接超时，开始第 %s 次重试，信息：%s', i, e)
                 # TODO cookie需使用self.cookies_str
                 resp = None
-                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
         else:
             def get_seckill_init_info_request(sku_id, num=1):
@@ -1426,6 +1429,7 @@ class Assistant(object):
 
             def submit_seckill_order_request(sku_id, server_buy_time=int(time.time()), num=1):
                 logger.info('提交抢购（秒杀）订单请求')
+                url = 'https://marathon.jd.com/seckillnew/orderService/pc/submitOrder.action'
                 # submit_seckill_order_request_data['riskControl'] = self.risk_control
                 # try:
                 #     response_data = self.socket_list[2].send_http_request(
@@ -1470,7 +1474,7 @@ class Assistant(object):
                 #     return False
                 # TODO cookie需使用self.cookies_str
                 resp = None
-                cookie_util.merge_cookies_from_response(self.sess.cookies, resp)
+                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
         else:
             def submit_seckill_order_request(sku_id, server_buy_time=int(time.time()), num=1):
@@ -1704,9 +1708,7 @@ class Assistant(object):
 
     def init_reserve_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息、方法
-        cookie_str = ''
-        for cookie in iter(self.sess.cookies):
-            cookie_str += f'{cookie.name}={cookie.value};'
+        cookie_str = self.get_and_update_cookies_str()
         config = self.config
         # 初始化添加购物车请求方法
         add_cart_request_headers = self.headers.copy()
