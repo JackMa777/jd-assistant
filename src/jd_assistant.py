@@ -1192,9 +1192,9 @@ class Assistant(object):
             server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
             server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
             if config.buy_time:
-                realy_buy_time = (server_buy_datetime + timedelta(milliseconds=-50)).strftime("%Y-%m-%d %H:%M:%S.%f")
-            else:
                 realy_buy_time = config.buy_time
+            else:
+                realy_buy_time = (server_buy_datetime + timedelta(milliseconds=-50)).strftime("%Y-%m-%d %H:%M:%S.%f")
         elif config.buy_time:
             server_buy_datetime = datetime.strptime(config.buy_time, "%Y-%m-%d %H:%M:%S.%f")
             server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
@@ -1204,12 +1204,10 @@ class Assistant(object):
         items_dict = parse_sku_id(sku_ids=config.sku_id)
 
         # 1.提前初始化请求信息、方法
-        # TODO 修改
         self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
 
         Timer.setSystemTime()
 
-        # TODO 修改
         # 2.倒计时
         logger.info('准备抢购商品:%s', list(items_dict.keys()))
         t = Timer(buy_time=realy_buy_time, sleep_interval=config.sleep_interval,
