@@ -144,9 +144,8 @@ class SocketClient(object):
             try:
                 try:
                     r.begin()
-                except ConnectionError:
-                    self.close_client()
-                    logger.error('拉取数据连接异常')
+                except ConnectionError as ce:
+                    logger.error('拉取数据异常：%s', ce)
                 will_close = r.will_close
                 http_response = HTTPResponse.from_httplib(r)
                 if will_close and will_close != _UNKNOWN:
@@ -189,3 +188,4 @@ class SocketClient(object):
 
     def close_client(self):
         self.sock.close()
+        self.is_connected = False

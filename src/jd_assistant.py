@@ -1078,7 +1078,6 @@ class Assistant(object):
         }
         self.sess.get(url=url, params=payload, headers=headers, timeout=(0.1, 0.08))
 
-    @deprecated
     def _get_seckill_init_info(self, sku_id, num=1):
         """获取秒杀初始化信息（包括：地址，发票，token）
         :param sku_id:
@@ -1088,7 +1087,6 @@ class Assistant(object):
         content = self.request_info['get_seckill_init_info_request'](sku_id, num)
         return parse_json(content)
 
-    @deprecated
     def _gen_seckill_order_data(self, sku_id, num=1):
         """生成提交抢购订单所需的请求体参数
         :param sku_id: 商品id
@@ -1247,21 +1245,32 @@ class Assistant(object):
                 retry_count = 0
 
                 while retry_count < 10:
-                    resp = self.socket_list[0].send_http_request(url='https://itemko.jd.com/itemShowBtn', method='GET',
-                                                  headers=get_sku_seckill_url_request_headers, params=payload
-                                                  , cookies=self.cookies_str)
-                    resp_data = resp.body
-                    resp_json = parse_json(resp_data)
-                    if resp_json.get('url'):
-                        # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                        router_url = 'https:' + resp_json.get('url')
-                        # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                        seckill_url = router_url.replace('divide', 'marathon').replace('user_routing', 'captcha.html')
-                        logger.info("抢购链接获取成功: %s", seckill_url)
-                        return seckill_url
-                    else:
+                    try:
+                        resp = self.socket_list[0].send_http_request(url='https://itemko.jd.com/itemShowBtn',
+                                                                     method='GET',
+                                                                     headers=get_sku_seckill_url_request_headers,
+                                                                     params=payload
+                                                                     , cookies=self.cookies_str)
+                        resp_data = resp.body
+                        resp_json = parse_json(resp_data)
+                        if resp_json.get('url'):
+                            # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                            router_url = 'https:' + resp_json.get('url')
+                            # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                            seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
+                                                                                           'captcha.html')
+                            logger.info("抢购链接获取成功: %s", seckill_url)
+                            return seckill_url
+                        else:
+                            retry_count += 1
+                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                            if resp_data:
+                                logger.info(f"响应数据：{resp_data}")
+                            time.sleep(retry_interval)
+                    except Exception as e:
                         retry_count += 1
-                        logger.info("第%s次获取抢购链接失败，%s不是抢购商品或抢购页面暂未刷新，%s秒后重试", retry_count, sku_id, retry_interval)
+                        logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                        logger.error("异常信息：%s", e)
                         time.sleep(retry_interval)
 
                 logger.info("抢购链接获取失败，终止抢购！")
@@ -1284,18 +1293,27 @@ class Assistant(object):
                 retry_count = 0
 
                 while retry_count < 10:
-                    resp = self.sess.get(url=url, headers=headers, params=payload, timeout=(0.1, 0.08))
-                    resp_json = parse_json(resp.text)
-                    if resp_json.get('url'):
-                        # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                        router_url = 'https:' + resp_json.get('url')
-                        # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                        seckill_url = router_url.replace('divide', 'marathon').replace('user_routing', 'captcha.html')
-                        logger.info("抢购链接获取成功: %s", seckill_url)
-                        return seckill_url
-                    else:
+                    try:
+                        resp = self.sess.get(url=url, headers=headers, params=payload, timeout=(0.1, 0.08))
+                        resp_json = parse_json(resp.text)
+                        if resp_json.get('url'):
+                            # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                            router_url = 'https:' + resp_json.get('url')
+                            # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                            seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
+                                                                                           'captcha.html')
+                            logger.info("抢购链接获取成功: %s", seckill_url)
+                            return seckill_url
+                        else:
+                            retry_count += 1
+                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                            if resp.text:
+                                logger.info(f"响应数据：{resp.text}")
+                            time.sleep(retry_interval)
+                    except Exception as e:
                         retry_count += 1
-                        logger.info("第%s次获取抢购链接失败，%s不是抢购商品或抢购页面暂未刷新，%s秒后重试", retry_count, sku_id, retry_interval)
+                        logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                        logger.info("异常信息：%s", e)
                         time.sleep(retry_interval)
 
                 logger.info("抢购链接获取失败，终止抢购！")
