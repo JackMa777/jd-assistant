@@ -1206,6 +1206,8 @@ class Assistant(object):
 
         Timer.setSystemTime()
 
+        # TODO 从倒计时开始添加多进程，后续流程都使用多进程执行
+
         # 2.倒计时
         logger.info('准备抢购商品:%s', list(items_dict.keys()))
         t = Timer(buy_time=realy_buy_time, sleep_interval=config.sleep_interval,
@@ -1814,7 +1816,7 @@ class Assistant(object):
                         #     'total_price': soup.find('span', id='sumPayPriceId').text[1:],  # remove '￥' from the begin
                         #     'items': []
                         # }
-                        # TODO: 这里可能会产生解析问题，待修复
+                        # T O D O: 这里可能会产生解析问题，待修复
                         # for item in soup.select('div.goods-list div.goods-items'):
                         #     div_tag = item.select('div.p-price')[0]
                         #     order_detail.get('items').append({
@@ -1852,7 +1854,7 @@ class Assistant(object):
             'riskControl': self.risk_control,
             'submitOrderParam.isBestCoupon': 1,
             'submitOrderParam.jxj': 1,
-            'submitOrderParam.trackId': self.track_id,  # Todo: need to get trackId
+            'submitOrderParam.trackId': self.track_id,  # T o d o: need to get trackId
             'submitOrderParam.eid': self.eid,
             'submitOrderParam.fp': self.fp,
             'submitOrderParam.needCheck': 1
@@ -1966,6 +1968,7 @@ class Assistant(object):
         self.request_info['submit_order_request'] = submit_order_request
 
     def make_seckill_connect(self):
+        # TODO 改造成socket连接池
         # 获取商品抢购链接请求
         self.socket_list.append(SocketClient(443, 'itemko.jd.com'))
         # 访问商品抢购链接请求
@@ -1978,15 +1981,18 @@ class Assistant(object):
         self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
 
     def make_reserve_seckill_connect(self):
+        # TODO 改造成socket连接池
         self.socket_list.append(SocketClient(443, 'cart.jd.com'))
         self.socket_list.append(SocketClient(443, 'trade.jd.com'))
         self.socket_list.append(SocketClient(443, 'trade.jd.com'))
 
     def connect_now(self):
+        # TODO 与socket连接池联动改造
         for sock in self.socket_list:
             sock.connect()
 
     def close_now(self):
+        # TODO 与socket连接池联动改造
         for sock in self.socket_list:
             sock.close_client()
 
