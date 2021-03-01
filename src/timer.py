@@ -2,6 +2,7 @@
 import json
 import os
 import platform
+import random
 import time
 from datetime import datetime, timedelta
 
@@ -25,30 +26,42 @@ class Timer(object):
         self.sleep_interval = sleep_interval
         self.fast_sleep_interval = fast_sleep_interval
 
-    def start(self, sock_conn_func=None):
+    def start(self, assistant=None):
         logger.info('正在等待到达设定时间：%s' % self.buy_time)
         is_connected = False
         now_time = time.time
+        check_timestamp = None
         buy_time_timestamp = self.buy_time.timestamp()
         fast_buy_time_timestamp = self.fast_buy_time.timestamp()
         # connect_time_timestamp = self.connect_time.timestamp()
         fast_sleep_interval = self.fast_sleep_interval
         sleep_interval = self.sleep_interval
         while True:
-            if now_time() > buy_time_timestamp:
+            now = now_time()
+            if now > buy_time_timestamp:
                 logger.info('时间到达，开始执行')
                 break
             else:
-                if now_time() > fast_buy_time_timestamp:
+                if now > fast_buy_time_timestamp:
                     if is_connected:
                         time.sleep(fast_sleep_interval)
                     else:
                         # if now_time() > connect_time_timestamp and sock_conn_func is not None:
-                        if sock_conn_func is not None:
-                            sock_conn_func()
+                        if assistant is not None:
+                            assistant.connect_now()
                             is_connected = True
                 else:
-                    # TODO 保活
+                    # 保活
+                    if assistant is not None:
+                        if check_timestamp is None:
+                            check_timestamp = now + 1800 + random.randint(-10, 10)
+                        elif now > check_timestamp:
+                            if assistant._validate_cookies() is True:
+                                check_timestamp = None
+                                logger.info("账户在线状态检查正常")
+                            else:
+                                logger.error("账户已离线，请重新登录！")
+                                exit(-1)
                     time.sleep(sleep_interval)
 
     @staticmethod

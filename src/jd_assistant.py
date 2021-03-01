@@ -1046,7 +1046,7 @@ class Assistant(object):
                 logger.info("第%s次获取抢购链接失败，%s不是抢购商品或抢购页面暂未刷新，%s秒后重试", retry_count, sku_id, retry_interval)
                 time.sleep(retry_interval)
 
-        logger.info("抢购链接获取失败，终止抢购！")
+        logger.error("抢购链接获取失败，终止抢购！")
         exit(-1)
 
     def request_seckill_url(self, sku_id, server_buy_time):
@@ -1212,7 +1212,7 @@ class Assistant(object):
                   fast_sleep_interval=config.fast_sleep_interval, is_sync=False)
         if self.config.fast_mode:
             self.make_seckill_connect()
-            t.start(self.connect_now)
+            t.start(self)
         else:
             t.start()
 
@@ -1273,7 +1273,7 @@ class Assistant(object):
                         logger.error("异常信息：%s", e)
                         time.sleep(retry_interval)
 
-                logger.info("抢购链接获取失败，终止抢购！")
+                logger.error("抢购链接获取失败，终止抢购！")
                 exit(-1)
         else:
             def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
@@ -1316,7 +1316,7 @@ class Assistant(object):
                         logger.info("异常信息：%s", e)
                         time.sleep(retry_interval)
 
-                logger.info("抢购链接获取失败，终止抢购！")
+                logger.error("抢购链接获取失败，终止抢购！")
                 exit(-1)
         self.request_info['get_sku_seckill_url_request'] = get_sku_seckill_url_request
 
@@ -1602,7 +1602,7 @@ class Assistant(object):
                   fast_sleep_interval=config.fast_sleep_interval)
         if self.config.fast_mode:
             self.make_reserve_seckill_connect()
-            t.start(self.connect_now)
+            t.start(self)
         else:
             t.start()
 
