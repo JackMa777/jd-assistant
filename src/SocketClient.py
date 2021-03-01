@@ -24,9 +24,11 @@ class SocketClient(object):
             sock = ssl.wrap_socket(sock)
         else:
             raise Exception("端口错误")
+        # TODO 改造成socket连接池
         self.sock = sock
         self.conn_port = conn_port
         self.is_connected = False
+        self.is_closed = False
         if conn_host is not None:
             host_split = conn_host.split('.')
             domain = '.'.join(host_split[len(host_split) - 2:])
@@ -38,6 +40,7 @@ class SocketClient(object):
         self.sock.settimeout(timeout)
 
     def connect(self, host=None):
+        # TODO 与socket连接池联动改造
         connected = self.is_connected
         domain = self.domain
         if host is not None:
@@ -149,6 +152,7 @@ class SocketClient(object):
                 will_close = r.will_close
                 http_response = HTTPResponse.from_httplib(r)
                 if will_close and will_close != _UNKNOWN:
+                    logger.info('数据已接收，主机 %s 关闭了连接', self.conn_host)
                     self.close_client()
             except Exception as e:
                 logger.error('数据接收异常：%s', e)
@@ -187,5 +191,6 @@ class SocketClient(object):
         return self.get_http_response(res_func)
 
     def close_client(self):
+        # TODO 与socket连接池联动改造
         self.sock.close()
-        self.is_connected = False
+        self.is_closed = True

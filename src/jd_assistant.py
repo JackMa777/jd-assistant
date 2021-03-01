@@ -1968,7 +1968,6 @@ class Assistant(object):
         self.request_info['submit_order_request'] = submit_order_request
 
     def make_seckill_connect(self):
-        # TODO 改造成socket连接池
         # 获取商品抢购链接请求
         self.socket_list.append(SocketClient(443, 'itemko.jd.com'))
         # 访问商品抢购链接请求
@@ -1981,18 +1980,15 @@ class Assistant(object):
         self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
 
     def make_reserve_seckill_connect(self):
-        # TODO 改造成socket连接池
         self.socket_list.append(SocketClient(443, 'cart.jd.com'))
         self.socket_list.append(SocketClient(443, 'trade.jd.com'))
         self.socket_list.append(SocketClient(443, 'trade.jd.com'))
 
     def connect_now(self):
-        # TODO 与socket连接池联动改造
         for sock in self.socket_list:
             sock.connect()
 
     def close_now(self):
-        # TODO 与socket连接池联动改造
         for sock in self.socket_list:
             sock.close_client()
 
