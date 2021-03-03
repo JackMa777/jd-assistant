@@ -18,6 +18,9 @@ class SocketClient(object):
 
     def __init__(self, conn_port=80, conn_host=None, timeout=0.5):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # 禁用Nagle算法
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         if conn_port == SocketClient.HTTP:
             pass
         elif conn_port == SocketClient.HTTPS:
