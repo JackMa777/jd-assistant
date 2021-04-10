@@ -6,6 +6,8 @@ from http import client
 from urllib3 import HTTPResponse
 
 import cookie_util
+from socketclient.Connector import TcpConnector
+from socketclient.SocketPool import SocketPool
 
 logger = logging.getLogger()
 
@@ -16,7 +18,11 @@ class SocketClient(object):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, conn_port=80, conn_host=None, timeout=0.5):
+    def __init__(self, conn_port=80, conn_host=None, timeout=0.5, factory=TcpConnector, backend="thread"):
+        # backend="thread"
+        # backend="gevent"
+        self.pool = SocketPool(factory=factory, backend=backend)
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -41,6 +47,9 @@ class SocketClient(object):
             self.domain = None
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
+
+    def init_connect(self, host=None, port=80, min_size=1, max_size=5):
+        self.pool.init_connect(host, port, min_size, max_size)
 
     def connect(self, host=None):
         # TODO 与socket连接池联动改造

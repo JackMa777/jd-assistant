@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 import CustomBrowser
 import address_util
 import cookie_util
-from SocketClient import SocketClient
+from socketclient.SocketClient import SocketClient
 from config import global_config
 from exception import AsstException
 from log import logger
