@@ -7,7 +7,7 @@ from urllib3 import HTTPResponse
 
 import cookie_util
 from socketclient.Connector import TcpConnector
-from socketclient.SocketPool import SocketPool
+from socketclient.SocketPoolManager import SocketPoolManager
 
 logger = logging.getLogger()
 
@@ -21,7 +21,7 @@ class SocketClient(object):
     def __init__(self, conn_port=80, conn_host=None, timeout=0.5, factory=TcpConnector, backend="thread"):
         # backend="thread"
         # backend="gevent"
-        self.pool = SocketPool(factory=factory, backend=backend)
+        self.pool_manager = SocketPoolManager(factory=factory, backend=backend)
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
@@ -48,8 +48,8 @@ class SocketClient(object):
         self.sock.setblocking(True)
         self.sock.settimeout(timeout)
 
-    def init_connect(self, host=None, port=80, min_size=1, max_size=5):
-        self.pool.init_connect(host, port, min_size, max_size)
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10):
+        self.pool_manager.init_pool(host, port, active_count, max_count)
 
     def connect(self, host=None):
         # TODO 与socket连接池联动改造

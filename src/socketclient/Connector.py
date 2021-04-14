@@ -10,7 +10,13 @@ import ssl
 
 from socketpool import util
 
+
 class Connector(object):
+
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+
     def matches(self, **match_options):
         raise NotImplementedError()
 
@@ -31,8 +37,8 @@ class TcpConnector(Connector):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, host, port, backend_mod, pool=None, timeout=0.5, mode='r',
-                 bufsize=-1):
+    def __init__(self, host, port, backend_mod, is_keep=False, timeout=0.5, mode='r', bufsize=-1):
+        super().__init__(host, port)
         sock = backend_mod.Socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -46,17 +52,15 @@ class TcpConnector(Connector):
         else:
             raise Exception("端口错误")
         self._s = sock
-        self._s.connect((host, port))
+        if is_keep:
+            self._s.connect((host, port))
+        self._connected = is_keep
         self._s_file = self._s.makefile(mode, bufsize)
-        self.host = host
-        self.port = port
         self.backend_mod = backend_mod
-        self._connected = True
         # use a 'jiggle' value to make sure there is some
         # randomization to expiry, to avoid many conns expiring very
         # closely together.
         self._life = time.time() - random.randint(0, 10)
-        self._pool = pool
 
     def __del__(self):
         self.release()
