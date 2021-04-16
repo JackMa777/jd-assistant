@@ -132,22 +132,17 @@ class SocketPoolManager(object):
         if self._reaper is not None:
             self._reaper.ensure_started()
 
-        self.set_connect(conn)
+        self.put_connect(conn)
 
-    def set_connect(self, conn: Connector):
+    def put_connect(self, conn: Connector):
         pool = self.get_pool(conn.host, conn.port, False)
         if pool:
             pool.put_connect(conn)
         else:
             # 释放该连接
-            if conn.is_connected():
-                conn.invalidate()
+            conn.invalidate()
 
-    def get_connect(self, **options):
-        options.update(self.options)
-        # Do not set this in self.options so we don't keep a persistent
-        # reference on the pool which would prevent garbage collection.
-        options["pool"] = self
+    def get_connect(self, host=None, port=80):
 
         found = None
         i = self.pool.qsize()
@@ -160,17 +155,17 @@ class SocketPoolManager(object):
             # first let's try to find a matching one from pool
 
             if self.pool.qsize():
-                for priority, candidate in self.pool:
+                for candidate in self.pool:
                     i -= 1
                     if self.too_old(candidate):
                         # let's drop it
                         self._reap_connection(candidate)
                         continue
 
-                    matches = candidate.matches(**options)
+                    matches = candidate.is_match(host, port)
                     if not matches:
                         # let's put it back
-                        unmatched.append((priority, candidate))
+                        unmatched.append(candidate)
                     else:
                         if candidate.is_connected():
                             found = candidate
@@ -192,7 +187,7 @@ class SocketPoolManager(object):
                 return found
 
             try:
-                new_item = self.factory(**options)
+                new_item = self.factory(host, port)
             except Exception as e:
                 last_error = e
             else:

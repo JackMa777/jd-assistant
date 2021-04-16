@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import socket
 import ssl
@@ -51,6 +52,17 @@ class SocketClient(object):
     def init_pool(self, host=None, port=80, active_count=3, max_count=10):
         self.pool_manager.init_pool(host, port, active_count, max_count)
 
+    @contextlib.contextmanager
+    def get_connect(self, host=None, port=80):
+        conn = self.pool_manager.get_connect(host, port)
+        try:
+            yield conn
+        except Exception as e:
+            conn.handle_exception(e)
+        finally:
+            self.pool_manager.put_connect(conn)
+
+    # 修改为连接所有
     def connect(self, host=None):
         # TODO 与socket连接池联动改造
         connected = self.is_connected
@@ -76,10 +88,10 @@ class SocketClient(object):
                 raise Exception('该socket初始化时未添加host参数')
             connect_domain = domain
         # 连接服务器
-        self.sock.connect((host, self.conn_port))
-        logger.info(f'已与 {host} 连接')
-        self.is_connected = True
-        self.domain = connect_domain
+        with self.get_connect(host, self.conn_port) as conn:
+            logger.info(f'已与 {host} 连接')
+            self.is_connected = True
+            self.domain = connect_domain
 
     @staticmethod
     def mark_byte_msg(url, method='GET', params=None, data=None, headers=None, cookies=None):
@@ -146,61 +158,64 @@ class SocketClient(object):
     def send(self, byte_msg: bytes):
         self.sock.send(byte_msg)
 
-    def get_http_response(self, recv_func=None):
-        sock = self.sock
+    def get_http_response(self, sock):
         charset = 'utf-8'
         _UNKNOWN = 'UNKNOWN'
         http_response = None
         # 接收html字节数据
-        if recv_func:
-            return recv_func(sock)
-        else:
-            r = client.HTTPResponse(sock)
+        r = client.HTTPResponse(sock)
+        try:
             try:
-                try:
-                    r.begin()
-                except ConnectionError as ce:
-                    logger.error('拉取数据异常：%s', ce)
-                will_close = r.will_close
-                http_response = HTTPResponse.from_httplib(r)
-                if will_close and will_close != _UNKNOWN:
-                    logger.info('数据已接收，主机 %s 关闭了连接', self.conn_host)
-                    self.close_client()
-            except Exception as e:
-                logger.error('数据接收异常：%s', e)
-            finally:
-                r.close()
-                # print('response：')
-                # print(response.decode(charset))
-                # 保持连接
-                if http_response is not None:
-                    setattr(http_response, "body", http_response.data.decode(charset))
-                    return http_response
-                else:
-                    return None
+                r.begin()
+            except ConnectionError as ce:
+                logger.error('拉取数据异常：%s', ce)
+            will_close = r.will_close
+            http_response = HTTPResponse.from_httplib(r)
+            if will_close and will_close != _UNKNOWN:
+                logger.info('数据已接收，主机 %s 关闭了连接', self.conn_host)
+                self.close_client()
+        except Exception as e:
+            logger.error('数据接收异常：%s', e)
+        finally:
+            r.close()
+            # print('response：')
+            # print(response.decode(charset))
+            # 保持连接
+            if http_response is not None:
+                setattr(http_response, "body", http_response.data.decode(charset))
+                return http_response
+            else:
+                return None
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, cookies=None, res_func=None):
         # http协议处理
         tmp_url = None
+        port = None
         if 'http://' in url:
             if self.conn_port != SocketClient.HTTP:
                 raise Exception(f"该socket初始端口为:{self.conn_port}，请输入https地址")
             tmp_url = url.replace('http://', '')
+            port = 80
         # https协议处理
         if 'https://' in url:
             if self.conn_port != SocketClient.HTTPS:
                 raise Exception(f"该socket初始端口为:{self.conn_port}，请输入http地址")
             tmp_url = url.replace('https://', '')
+            port = 443
         byte_msg = SocketClient.mark_byte_msg(url, method, params, data, headers, cookies)
         tmp_url = tmp_url if '/' in tmp_url else tmp_url + '/'
         host = tmp_url.split('/', 1)[0]
-        self.connect(host)
-        # 发送报文
-        # print(byte_msg)
-        self.send(byte_msg)
-        logger.info('已发送')
-        # 读取报文
-        return self.get_http_response(res_func)
+        with self.get_connect(host, port) as conn:
+            # 发送报文
+            # print(byte_msg)
+            conn.send(byte_msg)
+            logger.info('已发送')
+            # 读取报文
+            if res_func:
+                response = res_func(conn)
+            else:
+                response = conn.do_func(self.get_http_response)
+        return response
 
     def close_client(self):
         # TODO 与socket连接池联动改造

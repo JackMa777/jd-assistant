@@ -2,13 +2,18 @@
 #
 # This file is part of socketpool.
 # See the NOTICE for more information.
-
+import logging
 import socket
 import time
 import random
 import ssl
+from http import client
+
+from urllib3 import HTTPResponse
 
 from socketpool import util
+
+logger = logging.getLogger()
 
 
 class Connector(object):
@@ -16,17 +21,32 @@ class Connector(object):
     def __init__(self, host, port):
         self.host = host
         self.port = port
+        self._connected = False
+        self._closed = False
+        self.init_time = time.time() - random.randint(0, 10)
 
-    def matches(self, **match_options):
+    def is_match(self, match_host=None, match_port=None):
+        return match_host == self.host and match_port == self.port
+
+    def connect(self):
+        raise NotImplementedError()
+
+    def send(self, data):
+        raise NotImplementedError()
+
+    def do_func(self, func, **params):
         raise NotImplementedError()
 
     def is_connected(self):
-        raise NotImplementedError()
+        return self._connected
+
+    def is_closed(self):
+        return self._closed
+
+    def get_init_time(self):
+        return self.init_time
 
     def handle_exception(self, exception):
-        raise NotImplementedError()
-
-    def get_lifetime(self):
         raise NotImplementedError()
 
     def invalidate(self):
@@ -37,7 +57,7 @@ class TcpConnector(Connector):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, host, port, backend_mod, is_keep=False, timeout=0.5, mode='r', bufsize=-1):
+    def __init__(self, host, port, backend_mod, is_connect=False, timeout=0.5, mode='r', bufsize=-1):
         super().__init__(host, port)
         sock = backend_mod.Socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
@@ -52,41 +72,48 @@ class TcpConnector(Connector):
         else:
             raise Exception("端口错误")
         self._s = sock
-        if is_keep:
+        if is_connect:
             self._s.connect((host, port))
-        self._connected = is_keep
+            self._connected = True
         self._s_file = self._s.makefile(mode, bufsize)
         self.backend_mod = backend_mod
-        # use a 'jiggle' value to make sure there is some
-        # randomization to expiry, to avoid many conns expiring very
-        # closely together.
-        self._life = time.time() - random.randint(0, 10)
 
-    def __del__(self):
-        self.release()
+    def connect(self):
+        if self._connected:
+            return
+        if self._closed:
+            raise Exception("连接已关闭")
+        self._s.connect((self.host, self.port))
+        self._connected = True
 
-    def matches(self, **match_options):
-        target_host = match_options.get('host')
-        target_port = match_options.get('port')
-        return target_host == self.host and target_port == self.port
+    def send(self, data):
+        self.connect()
+        return self._s.send(data)
+
+    def do_func(self, func, **params):
+        if func:
+            func(self._s, params)
 
     def is_connected(self):
         if self._connected:
             return util.is_connected(self._s)
         return False
 
-    def handle_exception(self, exception):
-        print('got an exception')
-        print(str(exception))
+    def is_closed(self):
+        return self._closed or self._s._closed
 
-    def get_lifetime(self):
-        return self._life
+    def handle_exception(self, exception):
+        logger.error('异常：%s', exception)
 
     def invalidate(self):
-        self._s.close()
-        self._s_file.close()
-        self._connected = False
-        self._life = -1
+        if not self._closed:
+            self._s.close()
+            self._s_file.close()
+            self._connected = False
+            self._closed = True
+
+    def __del__(self):
+        self.release()
 
     def release(self):
         if self._pool is not None:
@@ -106,9 +133,6 @@ class TcpConnector(Connector):
 
     def sendall(self, *args):
         return self._s.sendall(*args)
-
-    def send(self, data):
-        return self._s.send(data)
 
     def recv(self, size=1024):
         return self._s.recv(size)

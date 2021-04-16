@@ -81,16 +81,17 @@ class SocketPool(object):
     def __del__(self):
         self.stop_reaper()
 
-    def too_old(self, conn, _time=time.time):
-        return _time() - conn.get_lifetime() > self.max_lifetime
+    def is_valid(self, conn: Connector, _time=time.time()):
+        return not conn.is_closed() and self.max_lifetime > _time - conn.get_init_time()
 
     def murder_connections(self):
         current_pool_size = self.pool.qsize()
         if current_pool_size > 0:
-            for priority, candidate in self.pool:
+            now = time.time()
+            for candidate in self.pool:
                 current_pool_size -= 1
-                if not self.too_old(candidate):
-                    self.pool.put((priority, candidate))
+                if self.is_valid(candidate, now):
+                    self.pool.put(candidate)
                 else:
                     self._reap_connection(candidate)
                 if current_pool_size <= 0:
@@ -104,9 +105,8 @@ class SocketPool(object):
     def stop_reaper(self):
         self._reaper.forceStop = True
 
-    def _reap_connection(self, conn):
-        if conn.is_connected():
-            conn.invalidate()
+    def _reap_connection(self, conn: Connector):
+        conn.invalidate()
 
     @property
     def size(self):
@@ -114,13 +114,13 @@ class SocketPool(object):
 
     def release_all(self):
         if self.pool.qsize():
-            for priority, conn in self.pool:
+            for conn in self.pool:
                 self._reap_connection(conn)
 
     def put_connect(self, conn: Connector):
         with self.lock:
             if self.pool.qsize() < self.max_count:
-                if not self.too_old(conn):
+                if self.is_valid(conn):
                     self.pool.put(conn)
                 else:
                     self._reap_connection(conn)
@@ -153,9 +153,9 @@ class SocketPool(object):
             # first let's try to find a matching one from pool
 
             if self.pool.qsize():
-                for priority, candidate in self.pool:
+                for candidate in self.pool:
                     i -= 1
-                    if self.too_old(candidate):
+                    if not self.is_valid(candidate):
                         # let's drop it
                         self._reap_connection(candidate)
                         continue
@@ -163,7 +163,7 @@ class SocketPool(object):
                     matches = candidate.matches(**options)
                     if not matches:
                         # let's put it back
-                        unmatched.append((priority, candidate))
+                        unmatched.append(candidate)
                     else:
                         if candidate.is_connected():
                             found = candidate
@@ -211,4 +211,4 @@ class SocketPool(object):
         except Exception as e:
             conn.handle_exception(e)
         finally:
-            self.release_connection(conn)
+            self.put_connect(conn)

@@ -1722,20 +1722,18 @@ class Assistant(object):
 
             def add_cart_request(params):
                 logger.info('添加购物车请求')
-                sock = self.socket_list[0]
+                # TODO
+                conn = self.socket_list[0]
                 i = 0
                 while i < 3:
                     try:
-                        def res_func(conn):
-                            while True:
-                                data = conn.recv(1)
-                                logger.info('已接收-为提高抢购速度，已截断响应数据')
-                                break
-
-                        sock.connect()
-                        sock.send(b_msg)
+                        conn.connect()
+                        conn.send(b_msg)
                         logger.info('已发送')
-                        sock.get_http_response(res_func)
+                        while True:
+                            data = conn.recv(1)
+                            logger.info('已接收-为提高抢购速度，已截断响应数据')
+                            break
                         break
                     except Exception as e:
                         i += 1
