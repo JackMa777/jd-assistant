@@ -3,15 +3,12 @@
 # This file is part of socketpool.
 # See the NOTICE for more information.
 import logging
-import socket
-import time
 import random
+import socket
 import ssl
-from http import client
+import time
 
-from urllib3 import HTTPResponse
-
-from socketpool import util
+from socketclient import util
 
 logger = logging.getLogger()
 

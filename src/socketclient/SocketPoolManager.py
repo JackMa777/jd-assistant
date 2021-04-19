@@ -22,6 +22,13 @@ class MaxConnectionsError(Exception):
     pass
 
 
+class CustomRecentlyUsedContainer(RecentlyUsedContainer):
+    def __iter__(self):
+        with self.lock:
+            for val in self._container.values():
+                yield val[0]
+
+
 class SocketPoolManager(object):
     """Pool of connections
 
@@ -64,7 +71,7 @@ class SocketPoolManager(object):
             self.backend = str(getattr(backend, '__name__', backend))
         self.max_pool = max_pool
         self.pool = None
-        self.pools = RecentlyUsedContainer(max_pool, dispose_func=lambda p: p.release_all())
+        self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.release_all())
         self._free_conns = 0
         self.factory = factory
         self.retry_max = retry_max
@@ -112,16 +119,11 @@ class SocketPoolManager(object):
         self.stop_reaper()
 
     def murder_connections(self):
-        current_pool_size = self.pool.qsize()
-        if current_pool_size > 0:
-            for priority, candidate in self.pool:
-                current_pool_size -= 1
-                if not self.too_old(candidate):
-                    self.pool.put((priority, candidate))
-                else:
-                    self._reap_connection(candidate)
-                if current_pool_size <= 0:
-                    break
+        pass
+        # for pool in self.pools.items():
+        #     pool.murder_connections()
+        #     if pool.size() <= 0:
+        #         del pool
 
     def start_reaper(self):
         self._reaper = self.backend_mod.ConnectionReaper(self,

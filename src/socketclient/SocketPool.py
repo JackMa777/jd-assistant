@@ -93,7 +93,7 @@ class SocketPool(object):
                 if self.is_valid(candidate, now):
                     self.pool.put(candidate)
                 else:
-                    self._reap_connection(candidate)
+                    candidate.invalidate()
                 if current_pool_size <= 0:
                     break
 
@@ -105,9 +105,6 @@ class SocketPool(object):
     def stop_reaper(self):
         self._reaper.forceStop = True
 
-    def _reap_connection(self, conn: Connector):
-        conn.invalidate()
-
     @property
     def size(self):
         return self.pool.qsize()
@@ -115,7 +112,7 @@ class SocketPool(object):
     def release_all(self):
         if self.pool.qsize():
             for conn in self.pool:
-                self._reap_connection(conn)
+                conn.invalidate()
 
     def put_connect(self, conn: Connector):
         with self.lock:
@@ -123,9 +120,9 @@ class SocketPool(object):
                 if self.is_valid(conn):
                     self.pool.put(conn)
                 else:
-                    self._reap_connection(conn)
+                    conn.invalidate()
             else:
-                self._reap_connection(conn)
+                conn.invalidate()
 
     def release_connection(self, conn):
         if self._reaper is not None:
@@ -157,7 +154,7 @@ class SocketPool(object):
                     i -= 1
                     if not self.is_valid(candidate):
                         # let's drop it
-                        self._reap_connection(candidate)
+                        candidate.invalidate()
                         continue
 
                     matches = candidate.matches(**options)
@@ -171,7 +168,7 @@ class SocketPool(object):
                         else:
                             # conn is dead for some reason.
                             # reap it.
-                            self._reap_connection(candidate)
+                            candidate.invalidate()
 
                     if i <= 0:
                         break
