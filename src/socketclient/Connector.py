@@ -20,12 +20,16 @@ class Connector(object):
         self.port = port
         self._connected = False
         self._closed = False
-        self.init_time = time.time() - random.randint(0, 10)
+        self._connect_time = None
 
     def is_match(self, match_host=None, match_port=None):
         return match_host == self.host and match_port == self.port
 
     def connect(self):
+        self._connect_time = time.time() - random.randint(0, 10)
+        raise NotImplementedError()
+
+    def keep_connect(self):
         raise NotImplementedError()
 
     def send(self, data):
@@ -40,8 +44,8 @@ class Connector(object):
     def is_closed(self):
         return self._closed
 
-    def get_init_time(self):
-        return self.init_time
+    def connect_time(self):
+        return self._connect_time
 
     def handle_exception(self, exception):
         raise NotImplementedError()
@@ -82,6 +86,10 @@ class TcpConnector(Connector):
             raise Exception("连接已关闭")
         self._s.connect((self.host, self.port))
         self._connected = True
+        self._connect_time = time.time() - random.randint(0, 10)
+
+    def keep_connect(self):
+        pass
 
     def send(self, data):
         self.connect()

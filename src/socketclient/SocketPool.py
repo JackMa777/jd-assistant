@@ -78,32 +78,31 @@ class SocketPool(object):
 
         self.lock = self.backend_mod.RLock()
 
-    def __del__(self):
-        self.stop_reaper()
+    def is_valid_connect(self, conn: Connector, _time=time.time()):
+        if conn.is_connected():
+            return self.max_lifetime > _time - conn.connect_time()
+        return not conn.is_closed()
 
-    def is_valid(self, conn: Connector, _time=time.time()):
-        return not conn.is_closed() and self.max_lifetime > _time - conn.get_init_time()
+    def verify_connect(self, conn: Connector, _time=time.time()):
+        if conn.is_connected():
+            bl = self.max_lifetime > _time - conn.connect_time()
+        else:
+            bl = not conn.is_closed()
+        if not bl:
+            conn.invalidate()
+            return False
+        return True
 
-    def murder_connections(self):
+    def verify_all(self):
         current_pool_size = self.pool.qsize()
         if current_pool_size > 0:
             now = time.time()
             for candidate in self.pool:
                 current_pool_size -= 1
-                if self.is_valid(candidate, now):
+                if self.verify_connect(candidate, now):
                     self.pool.put(candidate)
-                else:
-                    candidate.invalidate()
                 if current_pool_size <= 0:
                     break
-
-    def start_reaper(self):
-        self._reaper = self.backend_mod.ConnectionReaper(self,
-                                                         delay=self.reap_delay)
-        self._reaper.ensure_started()
-
-    def stop_reaper(self):
-        self._reaper.forceStop = True
 
     @property
     def size(self):
@@ -117,27 +116,18 @@ class SocketPool(object):
     def put_connect(self, conn: Connector):
         with self.lock:
             if self.pool.qsize() < self.max_count:
-                if self.is_valid(conn):
+                if self.verify_connect(conn):
                     self.pool.put(conn)
-                else:
-                    conn.invalidate()
             else:
                 conn.invalidate()
 
     def release_connection(self, conn):
-        if self._reaper is not None:
-            self._reaper.ensure_started()
-
         self.put_connect(conn)
 
     def get_queue(self, host, port):
         pass
 
-    def get_connect(self, **options):
-        options.update(self.options)
-        # Do not set this in self.options so we don't keep a persistent
-        # reference on the pool which would prevent garbage collection.
-        options["pool"] = self
+    def get_connect(self, host=None, port=80):
 
         found = None
         i = self.pool.qsize()
@@ -150,25 +140,20 @@ class SocketPool(object):
             # first let's try to find a matching one from pool
 
             if self.pool.qsize():
+                now = time.time()
                 for candidate in self.pool:
                     i -= 1
-                    if not self.is_valid(candidate):
-                        # let's drop it
-                        candidate.invalidate()
+                    if not self.verify_connect(candidate, now):
                         continue
 
-                    matches = candidate.matches(**options)
+                    matches = candidate.matches(host, port)
                     if not matches:
                         # let's put it back
                         unmatched.append(candidate)
                     else:
-                        if candidate.is_connected():
+                        if self.verify_connect(candidate, now):
                             found = candidate
                             break
-                        else:
-                            # conn is dead for some reason.
-                            # reap it.
-                            candidate.invalidate()
 
                     if i <= 0:
                         break
@@ -182,7 +167,7 @@ class SocketPool(object):
                 return found
 
             try:
-                new_item = self.factory(**options)
+                new_item = self.factory(host, port)
             except Exception as e:
                 last_error = e
             else:

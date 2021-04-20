@@ -4,11 +4,9 @@
 # See the NOTICE for more information.
 
 import contextlib
-import time
 
 from urllib3._collections import RecentlyUsedContainer
 
-from log import logger
 from socketclient import Connector
 from socketclient.SocketPool import SocketPool
 from socketpool.util import load_backend
@@ -24,9 +22,12 @@ class MaxConnectionsError(Exception):
 
 class CustomRecentlyUsedContainer(RecentlyUsedContainer):
     def __iter__(self):
-        with self.lock:
-            for val in self._container.values():
-                yield val[0]
+        raise NotImplementedError(
+            "Iteration over this class is unlikely to be threadsafe."
+        )
+
+    def get(self, key):
+        return self._container[key]
 
 
 class SocketPoolManager(object):
@@ -93,7 +94,7 @@ class SocketPoolManager(object):
 
     @property
     def size(self):
-        return self.pool.qsize()
+        return self.pools.__len__()
 
     def get_pool(self, host=None, port=80, init=True):
         pool = self.pools[(host, port)]
@@ -118,12 +119,19 @@ class SocketPoolManager(object):
     def __del__(self):
         self.stop_reaper()
 
-    def murder_connections(self):
+    def verify_pool(self):
+        for key in self.pools.keys():
+            pool = self.pools.get(key)
+            if pool:
+                with self.lock:
+                    if pool.size() <= 0:
+                        del self.pools[key]
+                    else:
+                        pool.verify_all()
+
+    def keep_pool(self):
+        # TODO 需要根据active_count进行异步保活
         pass
-        # for pool in self.pools.items():
-        #     pool.murder_connections()
-        #     if pool.size() <= 0:
-        #         del pool
 
     def start_reaper(self):
         self._reaper = self.backend_mod.ConnectionReaper(self,
@@ -207,12 +215,16 @@ class SocketPoolManager(object):
             raise last_error
 
     @contextlib.contextmanager
-    def connection(self, **options):
-        conn = self.get_connect(**options)
-        try:
-            yield conn
-            # what to do in case of success
-        except Exception as e:
-            conn.handle_exception(e)
-        finally:
-            self.release_connection(conn)
+    def get_connect(self, host=None, port=80):
+        pool = self.get_pool(host, port)
+        if pool:
+            conn = pool.get_connect(host, port)
+            try:
+                yield conn
+                # what to do in case of success
+            except Exception as e:
+                conn.handle_exception(e)
+            finally:
+                pool.put_connect(conn)
+        else:
+            return None
