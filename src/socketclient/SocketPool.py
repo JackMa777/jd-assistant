@@ -84,7 +84,9 @@ class SocketPool(object):
         return not conn.is_closed()
 
     def verify_connect(self, conn: Connector, _time=time.time()):
-        if conn.is_connected():
+        if not conn:
+            return False
+        elif conn.is_connected():
             bl = self.max_lifetime > _time - conn.connect_time()
         else:
             bl = not conn.is_closed()
