@@ -3,7 +3,6 @@
 # This file is part of socketpool.
 # See the NOTICE for more information.
 
-import contextlib
 import time
 
 from log import logger
@@ -185,14 +184,3 @@ class SocketPool(object):
             raise MaxTriesError()
         else:
             raise last_error
-
-    @contextlib.contextmanager
-    def connection(self, **options):
-        conn = self.get_connect(**options)
-        try:
-            yield conn
-            # what to do in case of success
-        except Exception as e:
-            conn.handle_exception(e)
-        finally:
-            self.put_connect(conn)

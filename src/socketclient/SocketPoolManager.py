@@ -3,8 +3,6 @@
 # This file is part of socketpool.
 # See the NOTICE for more information.
 
-import contextlib
-
 from urllib3._collections import RecentlyUsedContainer
 
 from socketclient import Connector
@@ -71,7 +69,6 @@ class SocketPoolManager(object):
             self.backend_mod = backend
             self.backend = str(getattr(backend, '__name__', backend))
         self.max_pool = max_pool
-        self.pool = None
         self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.release_all())
         self._free_conns = 0
         self.factory = factory
@@ -85,7 +82,7 @@ class SocketPoolManager(object):
             self.options = options
             self.options["backend_mod"] = self.backend_mod
 
-        self.lock = self.backend_mod.RLock()
+        self.sem = self.backend_mod.Semaphore(1)
 
         self._reaper = None
         if reap_connections:
@@ -97,33 +94,35 @@ class SocketPoolManager(object):
         return self.pools.__len__()
 
     def get_pool(self, host=None, port=80, init=True):
+        # TODO
         pool = self.pools[(host, port)]
         if not pool:
             if init is True:
                 pool = self.init_pool(host, port)
             else:
-                with self.lock:
+                with self.sem:
                     if self.pools.__len__() < self.max_pool:
                         pool = self.init_pool(host, port)
         return pool
 
     def init_pool(self, host=None, port=80, active_count=3, max_count=10):
-        with self.lock:
+        with self.sem:
             pool = SocketPool(self.factory, host, port, active_count, max_count, self.backend_mod)
+            # TODO
             self.pools[(host, port)] = pool
         return pool
 
-    def stop_reaper(self):
-        self._reaper.forceStop = True
-
-    def __del__(self):
-        self.stop_reaper()
+    # def stop_reaper(self):
+    #     self._reaper.forceStop = True
+    #
+    # def __del__(self):
+    #     self.stop_reaper()
 
     def verify_pool(self):
         for key in self.pools.keys():
             pool = self.pools.get(key)
             if pool:
-                with self.lock:
+                with self.sem:
                     if pool.size() <= 0:
                         del self.pools[key]
                     else:
@@ -134,9 +133,11 @@ class SocketPoolManager(object):
         pass
 
     def start_reaper(self):
-        self._reaper = self.backend_mod.ConnectionReaper(self,
-                                                         delay=self.reap_delay)
-        self._reaper.ensure_started()
+        pass
+        # TODO
+        # self._reaper = self.backend_mod.ConnectionReaper(self,
+        #                                                  delay=self.reap_delay)
+        # self._reaper.ensure_started()
 
     def release_connection(self, conn):
         if self._reaper is not None:
@@ -153,78 +154,8 @@ class SocketPoolManager(object):
             conn.invalidate()
 
     def get_connect(self, host=None, port=80):
-
-        found = None
-        i = self.pool.qsize()
-        tries = 0
-        last_error = None
-
-        unmatched = []
-
-        while tries < self.retry_max:
-            # first let's try to find a matching one from pool
-
-            if self.pool.qsize():
-                for candidate in self.pool:
-                    i -= 1
-                    if self.too_old(candidate):
-                        # let's drop it
-                        self._reap_connection(candidate)
-                        continue
-
-                    matches = candidate.is_match(host, port)
-                    if not matches:
-                        # let's put it back
-                        unmatched.append(candidate)
-                    else:
-                        if candidate.is_connected():
-                            found = candidate
-                            break
-                        else:
-                            # conn is dead for some reason.
-                            # reap it.
-                            self._reap_connection(candidate)
-
-                    if i <= 0:
-                        break
-
-            if unmatched:
-                for candidate in unmatched:
-                    self.pool.put(candidate)
-
-            # we got one.. we use it
-            if found is not None:
-                return found
-
-            try:
-                new_item = self.factory(host, port)
-            except Exception as e:
-                last_error = e
-            else:
-                # we should be connected now
-                if new_item.is_connected():
-                    with self.lock:
-                        return new_item
-
-            tries += 1
-            self.backend_mod.sleep(self.retry_delay)
-
-        if last_error is None:
-            raise MaxTriesError()
-        else:
-            raise last_error
-
-    @contextlib.contextmanager
-    def get_connect(self, host=None, port=80):
         pool = self.get_pool(host, port)
         if pool:
-            conn = pool.get_connect(host, port)
-            try:
-                yield conn
-                # what to do in case of success
-            except Exception as e:
-                conn.handle_exception(e)
-            finally:
-                pool.put_connect(conn)
+            return pool.get_connect(host, port)
         else:
             return None
