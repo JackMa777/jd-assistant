@@ -1,23 +1,13 @@
 # -*- coding: utf-8 -
-#
-# This file is part of socketpool.
-# See the NOTICE for more information.
 import logging
 
 from urllib3._collections import RecentlyUsedContainer
 
 from socketclient import Connector
 from socketclient.SocketPool import SocketPool
-from socketpool.util import load_backend
+from socketclient.util import load_backend
 
 logger = logging.getLogger()
-
-class MaxTriesError(Exception):
-    pass
-
-
-class MaxConnectionsError(Exception):
-    pass
 
 
 class CustomRecentlyUsedContainer(RecentlyUsedContainer):
@@ -33,8 +23,8 @@ class CustomRecentlyUsedContainer(RecentlyUsedContainer):
 class SocketPoolManager(object):
     """Pool of socket manager"""
 
-    def __init__(self, factory,
-                 retry_max=3, retry_delay=.1,
+    def __init__(self, conn_factory,
+                 retry_max=3, retry_delay=.01,
                  timeout=-1, max_lifetime=600.,
                  max_pool=10, options=None,
                  reap_connections=True, reap_delay=1,
@@ -48,8 +38,7 @@ class SocketPoolManager(object):
             self.backend = str(getattr(backend, '__name__', backend))
         self.max_pool = max_pool
         self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.release_all())
-        self._free_conns = 0
-        self.factory = factory
+        self.conn_factory = conn_factory
         self.retry_max = retry_max
         self.retry_delay = retry_delay
         self.timeout = timeout
@@ -71,6 +60,9 @@ class SocketPoolManager(object):
     def size(self):
         return self.pools.__len__()
 
+    def clear_pools(self):
+        self.pools.clear()
+
     def get_pool(self, host=None, port=80, full_init=True):
         pool = self.pools.get((host, port))
         if not pool:
@@ -84,7 +76,7 @@ class SocketPoolManager(object):
 
     def init_pool(self, host=None, port=80, active_count=3, max_count=10):
         with self.sem:
-            pool = SocketPool(self.factory, host, port, active_count, max_count, self.backend_mod)
+            pool = SocketPool(self.conn_factory, host, port, active_count, max_count, self.backend_mod)
             self.pools[(host, port)] = pool
         return pool
 

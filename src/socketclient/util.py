@@ -50,24 +50,20 @@ except ImportError:
         return sys.modules[name]
 
 def load_backend(backend_name):
-    """ load pool backend. If this is an external module it should be
-    passed as "somelib.backend_mod", for socketpool backend you can just
-    pass the name.
-
+    """
     Supported backend are :
         - thread: connection are maintained in a threadsafe queue.
         - gevent: support gevent
         - eventlet: support eventlet
-
     """
     try:
         if len(backend_name.split(".")) > 1:
             mod = import_module(backend_name)
         else:
-            mod = import_module("socketpool.backend_%s" % backend_name)
+            mod = import_module("socketclient.backend.backend_%s" % backend_name)
         return mod
     except ImportError:
-        error_msg = "%s isn't a socketpool backend" % backend_name
+        error_msg = "%s isn't a socketclient.backend backend" % backend_name
         raise ImportError(error_msg)
 
 

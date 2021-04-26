@@ -1,7 +1,5 @@
 import contextlib
 import logging
-import socket
-import ssl
 from http import client
 
 from urllib3 import HTTPResponse
@@ -16,13 +14,11 @@ DEFAULT_HEADERS = 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe
 
 
 class SocketClient(object):
-    HTTP = 80
-    HTTPS = 443
 
-    def __init__(self, factory=TcpConnector, backend="thread"):
+    def __init__(self, conn_factory=TcpConnector, backend="thread"):
         # backend="thread"
         # backend="gevent"
-        self.pool_manager = SocketPoolManager(factory=factory, backend=backend)
+        self.pool_manager = SocketPoolManager(conn_factory=conn_factory, backend=backend)
         self.is_connected = False
         self.is_closed = False
 
@@ -165,7 +161,6 @@ class SocketClient(object):
                 return None
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, cookies=None, res_func=None):
-        # http协议处理
         tmp_url = None
         port = None
         if 'http://' in url:
@@ -174,13 +169,15 @@ class SocketClient(object):
         elif 'https://' in url:
             tmp_url = url.replace('https://', '')
             port = 443
+        else:
+            raise Exception("端口错误")
         byte_msg = SocketClient.mark_byte_msg(url, method, params, data, headers, cookies)
         tmp_url = tmp_url if '/' in tmp_url else tmp_url + '/'
         host = tmp_url.split('/', 1)[0]
         with self.get_connect(host, port) as conn:
             # 发送报文
-            # print(byte_msg)
             conn.send(byte_msg)
+            # print(byte_msg)
             logger.info('已发送')
             # 读取报文
             if res_func:
@@ -190,6 +187,4 @@ class SocketClient(object):
         return response
 
     def close_client(self):
-        # TODO 与socket连接池联动改造
-        self.sock.close()
-        self.is_closed = True
+        self.pool_manager.clear_pools()
