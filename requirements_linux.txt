@@ -10,4 +10,5 @@ pycryptodome==3.9.9
 PyYAML==5.3.1
 requests==2.25.0
 selenium==3.141.0
+urllib3==1.26.4
 gevent==21.1.2

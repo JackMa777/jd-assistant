@@ -22,9 +22,7 @@ class MaxConnectionsError(Exception):
 
 class CustomRecentlyUsedContainer(RecentlyUsedContainer):
     def __iter__(self):
-        raise NotImplementedError(
-            "Iteration over this class is unlikely to be threadsafe."
-        )
+        super(CustomRecentlyUsedContainer, self).__iter__()
 
     def get(self, key):
         if key in self._container:
@@ -33,31 +31,7 @@ class CustomRecentlyUsedContainer(RecentlyUsedContainer):
 
 
 class SocketPoolManager(object):
-    """Pool of connections
-
-    This is the main object to maintain connection. Connections are
-    created using the factory instance passed as an option.
-
-    Options:
-    --------
-
-    :attr factory: Instance of socketpool.Connector. See
-        socketpool.conn.TcpConnector for an example
-    :attr retry_max: int, default 3. Numbr of times to retry a
-        connection before raising the MaxTriesError exception.
-    :attr max_lifetime: int, default 600. time in ms we keep a
-        connection in the pool
-    :attr max_size: int, default 10. Maximum number of connections we
-        keep in the pool.
-    :attr options: Options to pass to the factory
-    :attr reap_connection: boolean, default is true. If true a process
-        will be launched in background to kill idle connections.
-    :attr backend: string, default is thread. The socket pool can use
-        different backend to handle process and connections. For now
-        the backends "thread", "gevent" and "eventlet" are supported. But
-        you can add your own backend if you want. For an example of backend,
-        look at the module socketpool.gevent_backend.
-    """
+    """Pool of socket manager"""
 
     def __init__(self, factory,
                  retry_max=3, retry_delay=.1,
@@ -97,11 +71,10 @@ class SocketPoolManager(object):
     def size(self):
         return self.pools.__len__()
 
-    def get_pool(self, host=None, port=80, init=True):
-        # TODO
+    def get_pool(self, host=None, port=80, full_init=True):
         pool = self.pools.get((host, port))
         if not pool:
-            if init is True:
+            if full_init is True:
                 pool = self.init_pool(host, port)
             else:
                 with self.sem:
@@ -112,15 +85,8 @@ class SocketPoolManager(object):
     def init_pool(self, host=None, port=80, active_count=3, max_count=10):
         with self.sem:
             pool = SocketPool(self.factory, host, port, active_count, max_count, self.backend_mod)
-            # TODO
             self.pools[(host, port)] = pool
         return pool
-
-    # def stop_reaper(self):
-    #     self._reaper.forceStop = True
-    #
-    # def __del__(self):
-    #     self.stop_reaper()
 
     def verify_pool(self):
         for key in self.pools.keys():

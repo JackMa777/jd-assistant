@@ -92,6 +92,9 @@ class SocketPool(object):
             for conn in self.pool:
                 conn.invalidate()
 
+    def __del__(self):
+        self.release_all()
+
     def put_connect(self, conn: Connector):
         with self.sem:
             if self.pool.qsize() < self.max_count:

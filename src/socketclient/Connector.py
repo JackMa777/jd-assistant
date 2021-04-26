@@ -75,8 +75,8 @@ class TcpConnector(Connector):
         self._s = sock
         if is_connect:
             self.connect()
-        self._s_file = self._s.makefile(mode, bufsize)
         self.backend_mod = backend_mod
+        # self._s_file = self._s.makefile(mode, bufsize)
 
     def connect(self):
         if self._connected:
@@ -113,21 +113,21 @@ class TcpConnector(Connector):
     def invalidate(self):
         if not self._closed:
             self._s.close()
-            self._s_file.close()
+            # self._s_file.close()
             self._connected = False
             self._closed = True
 
     def __del__(self):
         self.invalidate()
 
-    def read(self, size=-1):
-        return self._s_file.read(size)
+    # def read(self, size=-1):
+    #     return self._s_file.read(size)
 
-    def readline(self, size=-1):
-        return self._s_file.readline(size)
+    # def readline(self, size=-1):
+    #     return self._s_file.readline(size)
 
-    def readlines(self, sizehint=0):
-        return self._s_file.readlines(sizehint)
+    # def readlines(self, sizehint=0):
+    #     return self._s_file.readlines(sizehint)
 
     def sendall(self, *args):
         return self._s.sendall(*args)
