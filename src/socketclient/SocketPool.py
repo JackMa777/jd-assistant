@@ -18,31 +18,7 @@ class MaxConnectionsError(Exception):
 
 
 class SocketPool(object):
-    """Pool of connections
-
-    This is the main object to maintain connection. Connections are
-    created using the factory instance passed as an option.
-
-    Options:
-    --------
-
-    :attr factory: Instance of socketpool.Connector. See
-        socketpool.conn.TcpConnector for an example
-    :attr retry_max: int, default 3. Numbr of times to retry a
-        connection before raising the MaxTriesError exception.
-    :attr max_lifetime: int, default 600. time in ms we keep a
-        connection in the pool
-    :attr max_size: int, default 10. Maximum number of connections we
-        keep in the pool.
-    :attr options: Options to pass to the factory
-    :attr reap_connection: boolean, default is true. If true a process
-        will be launched in background to kill idle connections.
-    :attr backend: string, default is thread. The socket pool can use
-        different backend to handle process and connections. For now
-        the backends "thread", "gevent" and "eventlet" are supported. But
-        you can add your own backend if you want. For an example of backend,
-        look at the module socketpool.gevent_backend.
-    """
+    """Pool of socket connections"""
 
     def __init__(self, factory, host=None, port=80, active_count=3, max_count=10,
                  backend_mod=None,
@@ -55,7 +31,7 @@ class SocketPool(object):
         self.max_count = max_count
         self.backend_mod = backend_mod
 
-        self.pool = getattr(backend_mod, 'Queue')()
+        self.pool = getattr(backend_mod, 'queue').Queue()
 
         for i in range(active_count):
             try:
@@ -75,7 +51,7 @@ class SocketPool(object):
         self._free_conns = 0
         self.max_lifetime = max_lifetime
 
-        self.lock = self.backend_mod.RLock()
+        self.sem = self.backend_mod.Semaphore(1)
 
     def is_valid_connect(self, conn: Connector, _time=time.time()):
         if conn.is_connected():
@@ -85,11 +61,14 @@ class SocketPool(object):
     def verify_connect(self, conn: Connector, _time=time.time()):
         if not conn:
             return False
+        elif conn.host != self.host or conn.port != self.port:
+            conn.invalidate()
+            return False
         elif conn.is_connected():
-            bl = self.max_lifetime > _time - conn.connect_time()
-        else:
-            bl = not conn.is_closed()
-        if not bl:
+            if conn.connect_time() + self.max_lifetime < _time:
+                conn.invalidate()
+                return False
+        elif conn.is_closed():
             conn.invalidate()
             return False
         return True
@@ -115,7 +94,7 @@ class SocketPool(object):
                 conn.invalidate()
 
     def put_connect(self, conn: Connector):
-        with self.lock:
+        with self.sem:
             if self.pool.qsize() < self.max_count:
                 if self.verify_connect(conn):
                     self.pool.put(conn)
@@ -132,53 +111,33 @@ class SocketPool(object):
 
         found = None
         i = self.pool.qsize()
-        tries = 0
         last_error = None
 
-        unmatched = []
+        if self.pool.qsize():
+            now = time.time()
+            while True:
+                candidate = self.pool.get()
+                i -= 1
+                if self.verify_connect(candidate, now):
+                    found = candidate
+                    break
 
-        while tries < self.retry_max:
-            # first let's try to find a matching one from pool
+                if i <= 0:
+                    break
 
-            if self.pool.qsize():
-                now = time.time()
-                for candidate in self.pool:
-                    i -= 1
-                    if not self.verify_connect(candidate, now):
-                        continue
+        # we got one.. we use it
+        if found is not None:
+            return found
 
-                    matches = candidate.matches(host, port)
-                    if not matches:
-                        # let's put it back
-                        unmatched.append(candidate)
-                    else:
-                        if self.verify_connect(candidate, now):
-                            found = candidate
-                            break
-
-                    if i <= 0:
-                        break
-
-            if unmatched:
-                for candidate in unmatched:
-                    self.pool.put(candidate)
-
-            # we got one.. we use it
-            if found is not None:
-                return found
-
-            try:
-                new_item = self.factory(host, port)
-            except Exception as e:
-                last_error = e
-            else:
-                # we should be connected now
-                if new_item.is_connected():
-                    with self.lock:
-                        return new_item
-
-            tries += 1
-            self.backend_mod.sleep(self.retry_delay)
+        try:
+            new_item = self.factory(host, port)
+        except Exception as e:
+            last_error = e
+        else:
+            # we should be connected now
+            new_item.connect()
+            with self.sem:
+                return new_item
 
         if last_error is None:
             raise MaxTriesError()

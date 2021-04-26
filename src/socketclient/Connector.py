@@ -74,8 +74,7 @@ class TcpConnector(Connector):
             raise Exception("端口错误")
         self._s = sock
         if is_connect:
-            self._s.connect((host, port))
-            self._connected = True
+            self.connect()
         self._s_file = self._s.makefile(mode, bufsize)
         self.backend_mod = backend_mod
 
@@ -97,7 +96,7 @@ class TcpConnector(Connector):
 
     def do_func(self, func, **params):
         if func:
-            func(self._s, params)
+            func(self._s, **params)
 
     def is_connected(self):
         if self._connected:
@@ -118,14 +117,7 @@ class TcpConnector(Connector):
             self._closed = True
 
     def __del__(self):
-        self.release()
-
-    def release(self):
-        if self._pool is not None:
-            if self._connected:
-                self._pool.release_connection(self)
-            else:
-                self._pool = None
+        self.invalidate()
 
     def read(self, size=-1):
         return self._s_file.read(size)

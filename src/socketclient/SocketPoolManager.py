@@ -2,6 +2,7 @@
 #
 # This file is part of socketpool.
 # See the NOTICE for more information.
+import logging
 
 from urllib3._collections import RecentlyUsedContainer
 
@@ -9,6 +10,7 @@ from socketclient import Connector
 from socketclient.SocketPool import SocketPool
 from socketpool.util import load_backend
 
+logger = logging.getLogger()
 
 class MaxTriesError(Exception):
     pass
@@ -25,7 +27,9 @@ class CustomRecentlyUsedContainer(RecentlyUsedContainer):
         )
 
     def get(self, key):
-        return self._container[key]
+        if key in self._container:
+            return self._container[key]
+        return None
 
 
 class SocketPoolManager(object):
@@ -95,7 +99,7 @@ class SocketPoolManager(object):
 
     def get_pool(self, host=None, port=80, init=True):
         # TODO
-        pool = self.pools[(host, port)]
+        pool = self.pools.get((host, port))
         if not pool:
             if init is True:
                 pool = self.init_pool(host, port)
@@ -156,6 +160,14 @@ class SocketPoolManager(object):
     def get_connect(self, host=None, port=80):
         pool = self.get_pool(host, port)
         if pool:
-            return pool.get_connect(host, port)
-        else:
-            return None
+            tries = 0
+            while tries < self.retry_max:
+                try:
+                    conn = pool.get_connect(host, port)
+                    if conn:
+                        return conn
+                except Exception as e:
+                    logger.error('获取连接异常，重试第：%s次，异常：%s', tries, e)
+                tries += 1
+                self.backend_mod.sleep(self.retry_delay)
+        return None
