@@ -96,7 +96,8 @@ class TcpConnector(Connector):
 
     def do_func(self, func, **params):
         if func:
-            func(self._s, **params)
+            return func(self._s, **params)
+        return None
 
     def is_connected(self):
         if self._connected:

@@ -19,35 +19,12 @@ class SocketClient(object):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, conn_port=80, conn_host=None, timeout=0.5, factory=TcpConnector, backend="thread"):
+    def __init__(self, factory=TcpConnector, backend="thread"):
         # backend="thread"
         # backend="gevent"
         self.pool_manager = SocketPoolManager(factory=factory, backend=backend)
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # 禁用Nagle算法
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        if conn_port == SocketClient.HTTP:
-            pass
-        elif conn_port == SocketClient.HTTPS:
-            sock = ssl.wrap_socket(sock)
-        else:
-            raise Exception("端口错误")
-        # TODO 改造成socket连接池
-        self.sock = sock
-        self.conn_port = conn_port
         self.is_connected = False
         self.is_closed = False
-        if conn_host is not None:
-            host_split = conn_host.split('.')
-            domain = '.'.join(host_split[len(host_split) - 2:])
-            self.conn_host = conn_host
-            self.domain = domain
-        else:
-            self.domain = None
-        self.sock.setblocking(True)
-        self.sock.settimeout(timeout)
 
     def init_pool(self, host=None, port=80, active_count=3, max_count=10):
         self.pool_manager.init_pool(host, port, active_count, max_count)
@@ -172,7 +149,7 @@ class SocketClient(object):
             will_close = r.will_close
             http_response = HTTPResponse.from_httplib(r)
             if will_close and will_close != _UNKNOWN:
-                logger.info('数据已接收，主机 %s 关闭了连接', self.conn_host)
+                logger.info('数据已接收，主机关闭了连接')
                 self.close_client()
         except Exception as e:
             logger.error('数据接收异常：%s', e)
@@ -192,14 +169,9 @@ class SocketClient(object):
         tmp_url = None
         port = None
         if 'http://' in url:
-            if self.conn_port != SocketClient.HTTP:
-                raise Exception(f"该socket初始端口为:{self.conn_port}，请输入https地址")
             tmp_url = url.replace('http://', '')
             port = 80
-        # https协议处理
-        if 'https://' in url:
-            if self.conn_port != SocketClient.HTTPS:
-                raise Exception(f"该socket初始端口为:{self.conn_port}，请输入http地址")
+        elif 'https://' in url:
             tmp_url = url.replace('https://', '')
             port = 443
         byte_msg = SocketClient.mark_byte_msg(url, method, params, data, headers, cookies)

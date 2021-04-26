@@ -31,18 +31,17 @@ class SocketPool(object):
         self.max_count = max_count
         self.backend_mod = backend_mod
 
-        self.pool = getattr(backend_mod, 'queue').Queue()
+        self.pool = getattr(backend_mod, 'queue').LifoQueue()
 
-        for i in range(active_count):
-            try:
-                new_connect = factory(host, port, backend_mod, True)
-                if new_connect.is_connected():
-                    self.pool.put(new_connect)
-            except Exception as e:
-                logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
         for i in range(max_count - active_count):
             try:
                 new_connect = factory(host, port, backend_mod)
+                self.pool.put(new_connect)
+            except Exception as e:
+                logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
+        for i in range(active_count):
+            try:
+                new_connect = factory(host, port, backend_mod, True)
                 if new_connect.is_connected():
                     self.pool.put(new_connect)
             except Exception as e:
