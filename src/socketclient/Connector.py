@@ -114,8 +114,8 @@ class TcpConnector(Connector):
             self._connected = False
             self._closed = True
 
-    def __del__(self):
-        self.invalidate()
+    # def __del__(self):
+    #     self.invalidate()
 
     # def read(self, size=-1):
     #     return self._s_file.read(size)
