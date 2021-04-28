@@ -13,7 +13,7 @@ class SocketPool(object):
                  backend_mod=None,
                  max_lifetime=600.):
 
-        self.factory = conn_factory
+        self.conn_factory = conn_factory
         self.host = host
         self.port = port
         self.active_count = active_count
@@ -42,7 +42,10 @@ class SocketPool(object):
 
     def is_valid_connect(self, conn: Connector, _time=time.time()):
         if conn.is_connected():
-            return self.max_lifetime > _time - conn.connect_time()
+            if conn.is_connecting():
+                return self.max_lifetime > _time - conn.connect_time()
+            else:
+                return False
         return not conn.is_closed()
 
     def verify_connect(self, conn: Connector, _time=time.time()):
@@ -51,14 +54,11 @@ class SocketPool(object):
         elif conn.host != self.host or conn.port != self.port:
             conn.invalidate()
             return False
-        elif conn.is_connected():
-            if conn.connect_time() + self.max_lifetime < _time:
-                conn.invalidate()
-                return False
-        elif conn.is_closed():
+        if self.is_valid_connect(conn, _time):
+            return True
+        else:
             conn.invalidate()
             return False
-        return True
 
     def verify_all(self):
         current_pool_size = self.pool.qsize()
@@ -118,7 +118,7 @@ class SocketPool(object):
             return found
 
         try:
-            new_item = self.factory(host, port)
+            new_item = self.conn_factory(host, port, self.backend_mod)
         except Exception as e:
             logger.error("创建连接异常，信息：%s", e)
         else:

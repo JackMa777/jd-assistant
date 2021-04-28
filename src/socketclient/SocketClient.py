@@ -161,8 +161,6 @@ class SocketClient(object):
                 return None
 
     def send_http_request(self, url, method='GET', params=None, data=None, headers=None, cookies=None, res_func=None):
-        tmp_url = None
-        port = None
         if 'http://' in url:
             tmp_url = url.replace('http://', '')
             port = 80

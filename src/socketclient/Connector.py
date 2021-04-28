@@ -55,12 +55,18 @@ class TcpConnector(Connector):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, host, port, backend_mod, is_connect=False, timeout=0.5, mode='r', bufsize=-1):
+    def __init__(self, host, port, backend_mod, is_connect=False, timeout=0.5):
         super().__init__(host, port)
         sock = backend_mod.Socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # TODO 保活，未生效
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        sock.ioctl(socket.SIO_KEEPALIVE_VALS,
+                   (1,               # 开启保活
+                    50000,           # 第一次探测时间，单位：毫秒
+                    50000)           # 第二次及以后探测时间，单位：毫秒
+                   )
         sock.setblocking(True)
         sock.settimeout(timeout)
         if port == TcpConnector.HTTP:
@@ -97,6 +103,9 @@ class TcpConnector(Connector):
         return None
 
     def is_connected(self):
+        return self._connected
+
+    def is_connecting(self):
         if self._connected:
             return util.is_connected(self._s)
         return False
@@ -111,7 +120,6 @@ class TcpConnector(Connector):
         if not self._closed:
             self._s.close()
             # self._s_file.close()
-            self._connected = False
             self._closed = True
 
     # def __del__(self):

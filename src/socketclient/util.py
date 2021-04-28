@@ -77,6 +77,7 @@ def can_use_kqueue():
 
     return True
 
+
 def is_connected(skt):
     try:
         fno = skt.fileno()
