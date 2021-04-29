@@ -41,6 +41,7 @@ class SocketClient(object):
             while tries < self.retry_max:
                 try:
                     conn = pool.get_connect(host, port)
+                    break
                 except Exception as e:
                     logger.error('获取连接异常，重试第：%s次，异常：%s', tries, e)
                 tries += 1
