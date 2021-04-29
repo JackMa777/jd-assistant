@@ -20,22 +20,22 @@ class SocketPool(object):
         self.max_count = max_count
         self.backend_mod = backend_mod
 
-        self.pool = getattr(backend_mod, 'queue').LifoQueue()
+        self.pool = getattr(backend_mod, 'queue').Queue(max_count)
 
-        for i in range(max_count - active_count):
-            try:
-                new_connect = conn_factory(host, port, backend_mod)
-                self.pool.put_nowait(new_connect)
-            except queue.Full:
-                logger.error("队列已满")
-                break
-            except Exception as e:
-                logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
         for i in range(active_count):
             try:
                 new_connect = conn_factory(host, port, backend_mod, True)
                 if new_connect.is_connected():
                     self.pool.put_nowait(new_connect)
+            except queue.Full:
+                logger.error("队列已满")
+                break
+            except Exception as e:
+                logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
+        for i in range(max_count - active_count):
+            try:
+                new_connect = conn_factory(host, port, backend_mod)
+                self.pool.put_nowait(new_connect)
             except queue.Full:
                 logger.error("队列已满")
                 break
@@ -172,5 +172,4 @@ class SocketPool(object):
                 break
             except Exception as e:
                 logger.error('新建连接异常：%s', e)
-
-        logger.info("与主机[%s]端口[%s]的所有连接已激活", self.host, self.port)
+        logger.info("与主机[%s]端口[%s]成功建立[%s]个连接", self.host, self.port, self.pool.qsize())
