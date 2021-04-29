@@ -23,32 +23,18 @@ class CustomRecentlyUsedContainer(RecentlyUsedContainer):
 class SocketPoolManager(object):
     """Pool of socket manager"""
 
-    def __init__(self, conn_factory,
-                 retry_max=3, retry_delay=.01,
+    def __init__(self, conn_factory, max_pool=10,
                  timeout=-1, max_lifetime=600.,
-                 max_pool=10, options=None,
                  reap_connections=True, reap_delay=1,
-                 backend="thread"):
-
-        if isinstance(backend, str):
-            self.backend_mod = load_backend(backend)
-            self.backend = backend
-        else:
-            self.backend_mod = backend
-            self.backend = str(getattr(backend, '__name__', backend))
+                 backend_mod=None):
         self.max_pool = max_pool
-        self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.release_all())
+        self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.invalidate_all())
         self.conn_factory = conn_factory
-        self.retry_max = retry_max
-        self.retry_delay = retry_delay
         self.timeout = timeout
         self.max_lifetime = max_lifetime
-        if options is None:
-            self.options = {"backend_mod": self.backend_mod}
-        else:
-            self.options = options
-            self.options["backend_mod"] = self.backend_mod
-
+        if not backend_mod:
+            backend_mod = load_backend("thread")
+        self.backend_mod = backend_mod
         self.sem = self.backend_mod.Semaphore(1)
 
         self._reaper = None
@@ -115,17 +101,8 @@ class SocketPoolManager(object):
             # 释放该连接
             conn.invalidate()
 
-    def get_connect(self, host=None, port=80):
-        pool = self.get_pool(host, port)
-        if pool:
-            tries = 0
-            while tries < self.retry_max:
-                try:
-                    conn = pool.get_connect(host, port)
-                    if conn:
-                        return conn
-                except Exception as e:
-                    logger.error('获取连接异常，重试第：%s次，异常：%s', tries, e)
-                tries += 1
-                self.backend_mod.sleep(self.retry_delay)
-        return None
+    def connect_all(self):
+        for key in self.pools.keys():
+            pool = self.pools.get(key)
+            if pool:
+                pool.connect_all()

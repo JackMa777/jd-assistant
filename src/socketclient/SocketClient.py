@@ -7,6 +7,7 @@ from urllib3 import HTTPResponse
 import cookie_util
 from socketclient.Connector import TcpConnector
 from socketclient.SocketPoolManager import SocketPoolManager
+from socketclient.util import load_backend
 
 logger = logging.getLogger()
 
@@ -15,19 +16,35 @@ DEFAULT_HEADERS = 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe
 
 class SocketClient(object):
 
-    def __init__(self, conn_factory=TcpConnector, backend="thread"):
+    def __init__(self, conn_factory=TcpConnector, backend="thread", retry_max=3, retry_delay=.01):
         # backend="thread"
         # backend="gevent"
-        self.pool_manager = SocketPoolManager(conn_factory=conn_factory, backend=backend)
-        self.is_connected = False
-        self.is_closed = False
+        if isinstance(backend, str):
+            self.backend_mod = load_backend(backend)
+            self.backend = backend
+        else:
+            self.backend_mod = backend
+            self.backend = str(getattr(backend, '__name__', backend))
+        self.pool_manager = SocketPoolManager(conn_factory=conn_factory, backend_mod=self.backend_mod)
+        self.retry_max = retry_max
+        self.retry_delay = retry_delay
 
     def init_pool(self, host=None, port=80, active_count=3, max_count=10):
         self.pool_manager.init_pool(host, port, active_count, max_count)
 
     @contextlib.contextmanager
     def get_connect(self, host=None, port=80):
-        conn = self.pool_manager.get_connect(host, port)
+        conn = None
+        pool = self.pool_manager.get_pool(host, port)
+        if pool:
+            tries = 0
+            while tries < self.retry_max:
+                try:
+                    conn = pool.get_connect(host, port)
+                except Exception as e:
+                    logger.error('获取连接异常，重试第：%s次，异常：%s', tries, e)
+                tries += 1
+                self.backend_mod.sleep(self.retry_delay)
         try:
             yield conn
         except Exception as e:
@@ -36,35 +53,13 @@ class SocketClient(object):
             self.pool_manager.put_connect(conn)
 
     # 修改为连接所有
-    def connect(self, host=None):
-        # TODO 与socket连接池联动改造
-        connected = self.is_connected
-        domain = self.domain
-        if host is not None:
-            host_split = host.split('.')
-            connect_domain = '.'.join(host_split[len(host_split) - 2:])
-            if domain is not None:
-                if domain != connect_domain:
-                    if connected:
-                        raise Exception('输入主机域名与该套接字已连接主机域名不一致')
-                    else:
-                        raise Exception('输入主机域名与该套接字已设置主机域名不一致')
-                elif connected:
-                    return
-            elif connected:
-                return
+    def connect(self, host=None, port=80):
+        if host is not None and port is not None:
+            pool = self.pool_manager.get_pool(host, port)
+            if pool:
+                pool.connect_all()
         else:
-            if connected:
-                return
-            host = self.conn_host
-            if host is None:
-                raise Exception('该socket初始化时未添加host参数')
-            connect_domain = domain
-        # 连接服务器
-        with self.get_connect(host, self.conn_port) as conn:
-            logger.info(f'已与 {host} 连接')
-            self.is_connected = True
-            self.domain = connect_domain
+            self.pool_manager.connect_all()
 
     @staticmethod
     def mark_byte_msg(url, method='GET', params=None, data=None, headers=None, cookies=None):
@@ -128,8 +123,11 @@ class SocketClient(object):
             b_msg_array.extend(''.join(msg_list).encode())
         return bytes(b_msg_array)
 
-    def send(self, byte_msg: bytes):
-        self.sock.send(byte_msg)
+    def send(self, host=None, port=80, byte_msg: bytes = b''):
+        with self.get_connect(host, port) as conn:
+            # 发送报文
+            conn.send(byte_msg)
+            logger.info('已发送')
 
     def get_http_response(self, sock):
         charset = 'utf-8'
@@ -175,8 +173,8 @@ class SocketClient(object):
         with self.get_connect(host, port) as conn:
             # 发送报文
             conn.send(byte_msg)
-            # print(byte_msg)
             logger.info('已发送')
+            # print(byte_msg)
             # 读取报文
             if res_func:
                 response = res_func(conn)

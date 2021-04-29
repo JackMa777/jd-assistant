@@ -1727,13 +1727,16 @@ class Assistant(object):
                 i = 0
                 while i < 3:
                     try:
+                        def res_func(conn):
+                            while True:
+                                data = conn.recv(1)
+                                logger.info('已接收-为提高抢购速度，已截断响应数据')
+                                break
+
                         conn.connect()
                         conn.send(b_msg)
                         logger.info('已发送')
-                        while True:
-                            data = conn.recv(1)
-                            logger.info('已接收-为提高抢购速度，已截断响应数据')
-                            break
+                        conn.get_http_response(res_func)
                         break
                     except Exception as e:
                         i += 1

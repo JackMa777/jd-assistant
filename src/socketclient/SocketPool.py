@@ -25,14 +25,20 @@ class SocketPool(object):
         for i in range(max_count - active_count):
             try:
                 new_connect = conn_factory(host, port, backend_mod)
-                self.pool.put(new_connect)
+                self.pool.put_nowait(new_connect)
+            except queue.Full:
+                logger.error("队列已满")
+                break
             except Exception as e:
                 logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
         for i in range(active_count):
             try:
                 new_connect = conn_factory(host, port, backend_mod, True)
                 if new_connect.is_connected():
-                    self.pool.put(new_connect)
+                    self.pool.put_nowait(new_connect)
+            except queue.Full:
+                logger.error("队列已满")
+                break
             except Exception as e:
                 logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
 
@@ -69,30 +75,39 @@ class SocketPool(object):
                     candidate = self.pool.get_nowait()
                     current_pool_size -= 1
                     if self.verify_connect(candidate, now):
-                        self.pool.put(candidate)
+                        self.pool.put_nowait(candidate)
                     if current_pool_size <= 0:
                         break
                 except queue.Empty:
                     break
+                except queue.Full:
+                    break
+                except Exception as e:
+                    logger.error("异常信息：%s", e)
 
     @property
     def size(self):
         return self.pool.qsize()
 
-    def release_all(self):
+    def invalidate_all(self):
         if self.pool.qsize():
             while True:
                 try:
                     self.pool.get_nowait().invalidate()
                 except queue.Empty:
                     break
+                except Exception as e:
+                    logger.error("异常信息：%s", e)
         logger.info("主机[%s]端口[%s]所有连接释放完成", self.host, self.port)
 
     def put_connect(self, conn: Connector):
         with self.sem:
             if self.pool.qsize() < self.max_count:
                 if self.verify_connect(conn):
-                    self.pool.put(conn)
+                    try:
+                        self.pool.put_nowait(conn)
+                    except queue.Full:
+                        conn.invalidate()
             else:
                 conn.invalidate()
 
@@ -103,8 +118,8 @@ class SocketPool(object):
             now = time.time()
             while True:
                 try:
-                    candidate = self.pool.get_nowait()
                     i -= 1
+                    candidate = self.pool.get_nowait()
                     if self.verify_connect(candidate, now):
                         found = candidate
                         break
@@ -112,6 +127,8 @@ class SocketPool(object):
                         break
                 except queue.Empty:
                     return None
+                except Exception as e:
+                    logger.error("异常信息：%s", e)
 
         # we got one.. we use it
         if found is not None:
@@ -126,3 +143,34 @@ class SocketPool(object):
             new_item.connect()
             with self.sem:
                 return new_item
+
+    def connect_all(self):
+        qsize = self.pool.qsize()
+        if qsize:
+            while True:
+                try:
+                    qsize -= 1
+                    conn = self.pool.get_nowait()
+                    if self.is_valid_connect(conn):
+                        conn.connect()
+                        self.pool.put_nowait(conn)
+                    else:
+                        conn.invalidate()
+                    if qsize <= 0:
+                        break
+                except queue.Full:
+                    break
+                except queue.Empty:
+                    break
+                except Exception as e:
+                    logger.error("异常信息：%s", e)
+        for i in range(self.max_count - self.pool.qsize()):
+            try:
+                new_connect = self.conn_factory(self.host, self.port, self.backend_mod)
+                self.pool.put_nowait(new_connect)
+            except queue.Full:
+                break
+            except Exception as e:
+                logger.error('新建连接异常：%s', e)
+
+        logger.info("与主机[%s]端口[%s]的所有连接已激活", self.host, self.port)
