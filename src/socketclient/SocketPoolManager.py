@@ -102,7 +102,8 @@ class SocketPoolManager(object):
             conn.invalidate()
 
     def connect_all(self):
-        for key in self.pools.keys():
-            pool = self.pools.get(key)
-            if pool:
-                pool.connect_all()
+        with self.sem:
+            for key in self.pools.keys():
+                pool = self.pools.get(key)
+                if pool:
+                    pool.connect_all()

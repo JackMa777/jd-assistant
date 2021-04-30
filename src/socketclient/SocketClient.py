@@ -5,6 +5,7 @@ from http import client
 from urllib3 import HTTPResponse
 
 import cookie_util
+from socketclient import Connector
 from socketclient.Connector import TcpConnector
 from socketclient.SocketPoolManager import SocketPoolManager
 from socketclient.util import load_backend
@@ -129,8 +130,12 @@ class SocketClient(object):
             # 发送报文
             conn.send(byte_msg)
             logger.info('已发送')
+        return conn
 
-    def get_http_response(self, sock):
+    def get_conn_http_response(self, conn: Connector):
+        return conn.do_func(self.get_socket_http_response)
+
+    def get_socket_http_response(self, sock):
         charset = 'utf-8'
         _UNKNOWN = 'UNKNOWN'
         http_response = None
@@ -180,7 +185,7 @@ class SocketClient(object):
             if res_func:
                 response = res_func(conn)
             else:
-                response = conn.do_func(self.get_http_response)
+                response = conn.do_func(self.get_socket_http_response)
         return response
 
     def close_client(self):

@@ -1736,7 +1736,7 @@ class Assistant(object):
                         conn.connect()
                         conn.send(b_msg)
                         logger.info('已发送')
-                        conn.get_http_response(res_func)
+                        conn.get_socket_http_response(res_func)
                         break
                     except Exception as e:
                         i += 1
