@@ -30,8 +30,8 @@ class SocketClient(object):
         self.retry_max = retry_max
         self.retry_delay = retry_delay
 
-    def init_pool(self, host=None, port=80, active_count=3, max_count=10):
-        self.pool_manager.init_pool(host, port, active_count, max_count)
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10, max_lifetime=50):
+        self.pool_manager.init_pool(host, port, active_count, max_count, max_lifetime)
 
     @contextlib.contextmanager
     def get_connect(self, host=None, port=80):

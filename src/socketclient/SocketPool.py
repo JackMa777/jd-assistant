@@ -10,14 +10,15 @@ class SocketPool(object):
     """Pool of socket connections"""
 
     def __init__(self, conn_factory, host=None, port=80, active_count=3, max_count=10,
-                 backend_mod=None,
-                 max_lifetime=600.):
+                 life_time=50,
+                 backend_mod=None):
 
         self.conn_factory = conn_factory
         self.host = host
         self.port = port
         self.active_count = active_count
         self.max_count = max_count
+        self.life_time = life_time
         self.backend_mod = backend_mod
 
         self.pool = getattr(backend_mod, 'queue').Queue(max_count)
@@ -32,24 +33,24 @@ class SocketPool(object):
                 break
             except Exception as e:
                 logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
-        for i in range(max_count - active_count):
-            try:
-                new_connect = conn_factory(host, port, backend_mod)
-                self.pool.put_nowait(new_connect)
-            except queue.Full:
-                logger.error("队列已满")
-                break
-            except Exception as e:
-                logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
-
-        self.max_lifetime = max_lifetime
+        static_count = max_count - active_count
+        if static_count > 0:
+            for i in range(static_count):
+                try:
+                    new_connect = conn_factory(host, port, backend_mod)
+                    self.pool.put_nowait(new_connect)
+                except queue.Full:
+                    logger.error("队列已满")
+                    break
+                except Exception as e:
+                    logger.error('新建连接异常，host：%s，port：%s，异常：%s', host, port, e)
 
         self.sem = self.backend_mod.Semaphore(1)
 
     def is_valid_connect(self, conn: Connector, _time=time.time()):
         if conn.is_connected():
             if conn.is_connecting():
-                return self.max_lifetime > _time - conn.connect_time()
+                return self.life_time > _time - conn.connect_time()
             else:
                 return False
         return not conn.is_closed()
@@ -71,11 +72,14 @@ class SocketPool(object):
         if current_pool_size > 0:
             now = time.time()
             while True:
+                conn = None
                 try:
-                    candidate = self.pool.get_nowait()
+                    conn = self.pool.get_nowait()
                     current_pool_size -= 1
-                    if self.verify_connect(candidate, now):
-                        self.pool.put_nowait(candidate)
+                    # TODO 添加保活
+                    # 根据active_count值保持活跃连接数
+                    if self.verify_connect(conn, now):
+                        self.pool.put_nowait(conn)
                     if current_pool_size <= 0:
                         break
                 except queue.Empty:
@@ -84,6 +88,9 @@ class SocketPool(object):
                     break
                 except Exception as e:
                     logger.error("异常信息：%s", e)
+                    if conn:
+                        conn.invalidate()
+        # TODO 完成后需要保证队列中有max_count个连接（不够则创建）
 
     @property
     def size(self):
@@ -112,32 +119,26 @@ class SocketPool(object):
                 conn.invalidate()
 
     def get_connect(self, host=None, port=80):
-        found = None
         i = self.pool.qsize()
         if i:
             now = time.time()
             while True:
                 try:
-                    i -= 1
-                    candidate = self.pool.get_nowait()
-                    if self.verify_connect(candidate, now):
-                        found = candidate
-                        break
-                    if i <= 0:
-                        break
+                    conn = self.pool.get_nowait()
+                    if self.verify_connect(conn, now):
+                        return conn
+                    else:
+                        i -= 1
+                        if i <= 0:
+                            break
                 except queue.Empty:
                     return None
                 except Exception as e:
                     logger.error("异常信息：%s", e)
-
-        # we got one.. we use it
-        if found is not None:
-            return found
-
         try:
             new_item = self.conn_factory(host, port, self.backend_mod)
         except Exception as e:
-            logger.error("创建连接异常，信息：%s", e)
+            logger.error("创建连接异常：%s", e)
         else:
             # we should be connected now
             new_item.connect()

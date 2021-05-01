@@ -23,24 +23,20 @@ class CustomRecentlyUsedContainer(RecentlyUsedContainer):
 class SocketPoolManager(object):
     """Pool of socket manager"""
 
-    def __init__(self, conn_factory, max_pool=10,
-                 timeout=-1, max_lifetime=600.,
-                 reap_connections=True, reap_delay=1,
-                 backend_mod=None):
+    def __init__(self, conn_factory, backend_mod=None, max_pool=10,
+                 verify_interval_time=0):
         self.max_pool = max_pool
         self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.invalidate_all())
         self.conn_factory = conn_factory
-        self.timeout = timeout
-        self.max_lifetime = max_lifetime
         if not backend_mod:
             backend_mod = load_backend("thread")
         self.backend_mod = backend_mod
         self.sem = self.backend_mod.Semaphore(1)
 
         self._reaper = None
-        if reap_connections:
-            self.reap_delay = reap_delay
-            self.start_reaper()
+        if verify_interval_time > 0:
+            self.verify_interval_time = verify_interval_time
+            self.start_verifying()
 
     @property
     def size(self):
@@ -60,13 +56,13 @@ class SocketPoolManager(object):
                         pool = self.init_pool(host, port)
         return pool
 
-    def init_pool(self, host=None, port=80, active_count=3, max_count=10):
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10, life_time=50):
         with self.sem:
-            pool = SocketPool(self.conn_factory, host, port, active_count, max_count, self.backend_mod)
+            pool = SocketPool(self.conn_factory, host, port, active_count, max_count, life_time, self.backend_mod)
             self.pools[(host, port)] = pool
         return pool
 
-    def verify_pool(self):
+    def verify_pools(self):
         for key in self.pools.keys():
             pool = self.pools.get(key)
             if pool:
@@ -76,16 +72,12 @@ class SocketPoolManager(object):
                     else:
                         pool.verify_all()
 
-    def keep_pool(self):
-        # TODO 需要根据active_count进行异步保活
+    def start_verifying(self):
         pass
-
-    def start_reaper(self):
-        pass
-        # TODO
+        # TODO 启动新线程/协程 轮询保活方法
+        # self.verify_pools
         # self._reaper = self.backend_mod.ConnectionReaper(self,
         #                                                  delay=self.reap_delay)
-        # self._reaper.ensure_started()
 
     def release_connection(self, conn):
         if self._reaper is not None:
