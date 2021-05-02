@@ -17,20 +17,21 @@ DEFAULT_HEADERS = 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe
 
 class SocketClient(object):
 
-    def __init__(self, conn_factory=TcpConnector, backend="thread", retry_max=3, retry_delay=.01):
-        # backend="thread"
+    def __init__(self, conn_factory=TcpConnector, backend="gevent", max_pool=10, retry_count=3,
+                 verify_interval_time=50):
         # backend="gevent"
+        # backend="thread"
+        # backend="eventlet"
         if isinstance(backend, str):
             self.backend_mod = load_backend(backend)
             self.backend = backend
         else:
             self.backend_mod = backend
             self.backend = str(getattr(backend, '__name__', backend))
-        self.pool_manager = SocketPoolManager(conn_factory=conn_factory, backend_mod=self.backend_mod)
-        self.retry_max = retry_max
-        self.retry_delay = retry_delay
+        self.pool_manager = SocketPoolManager(conn_factory, self.backend_mod, max_pool, verify_interval_time)
+        self.retry_count = retry_count
 
-    def init_pool(self, host=None, port=80, active_count=3, max_count=10, max_lifetime=50):
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10, max_lifetime=55):
         self.pool_manager.init_pool(host, port, active_count, max_count, max_lifetime)
 
     @contextlib.contextmanager
@@ -39,14 +40,13 @@ class SocketClient(object):
         pool = self.pool_manager.get_pool(host, port)
         if pool:
             tries = 0
-            while tries < self.retry_max:
+            while tries < self.retry_count:
                 try:
                     conn = pool.get_connect(host, port)
                     break
                 except Exception as e:
                     logger.error('获取连接异常，重试第：%s次，异常：%s', tries, e)
                 tries += 1
-                self.backend_mod.sleep(self.retry_delay)
         try:
             yield conn
         except Exception as e:

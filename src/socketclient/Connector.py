@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -
 import logging
-import random
 import socket
 import ssl
 import time
@@ -23,7 +22,10 @@ class Connector(object):
         return match_host == self.host and match_port == self.port
 
     def connect(self):
-        self._connect_time = time.time() - random.randint(0, 10)
+        self._connect_time = time.time()
+        raise NotImplementedError()
+
+    def is_valid_connect(self):
         raise NotImplementedError()
 
     def keep_connect(self):
@@ -61,12 +63,12 @@ class TcpConnector(Connector):
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         # TODO 保活，未生效
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        sock.ioctl(socket.SIO_KEEPALIVE_VALS,
-                   (1,               # 开启保活
-                    50000,           # 第一次探测时间，单位：毫秒
-                    50000)           # 第二次及以后探测时间，单位：毫秒
-                   )
+        # sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # sock.ioctl(socket.SIO_KEEPALIVE_VALS,
+        #            (1,               # 开启保活
+        #             50000,           # 第一次探测时间，单位：毫秒
+        #             50000)           # 第二次及以后探测时间，单位：毫秒
+        #            )
         sock.setblocking(True)
         sock.settimeout(timeout)
         if port == TcpConnector.HTTP:
@@ -88,14 +90,17 @@ class TcpConnector(Connector):
             raise Exception("连接已关闭")
         self._s.connect((self.host, self.port))
         self._connected = True
-        self._connect_time = time.time() - random.randint(0, 10)
+        self._connect_time = time.time()
 
-    def keep_connect(self):
+    def keep_connect(self, _time=time.time()):
+        # TODO 保活
         pass
+        # self._connect_time = _time
+        # self._s.send(bytes(0xFF))
 
-    def send(self, data):
+    def send(self, *args):
         self.connect()
-        return self._s.send(data)
+        return self._s.sendall(*args)
 
     def do_func(self, func, **params):
         if func:
@@ -106,9 +111,7 @@ class TcpConnector(Connector):
         return self._connected
 
     def is_connecting(self):
-        if self._connected:
-            return util.is_connected(self._s)
-        return False
+        return util.is_connected(self._s)
 
     def is_closed(self):
         return self._closed or self._s._closed
@@ -133,9 +136,6 @@ class TcpConnector(Connector):
 
     # def readlines(self, sizehint=0):
     #     return self._s_file.readlines(sizehint)
-
-    def sendall(self, *args):
-        return self._s.sendall(*args)
 
     def recv(self, size=1024):
         return self._s.recv(size)

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -
 import logging
+import threading
+import time
 
 from urllib3._collections import RecentlyUsedContainer
 
@@ -20,11 +22,29 @@ class CustomRecentlyUsedContainer(RecentlyUsedContainer):
         return None
 
 
+class VerifyThread(threading.Thread):
+    forceStop = False
+
+    def __init__(self, func, interval_time=50):
+        self.func = func
+        self.interval_time = interval_time
+        threading.Thread.__init__(self)
+        self.setDaemon(True)
+        self.start()
+
+    def run(self):
+        while True:
+            time.sleep(self.interval_time)
+            if self.forceStop:
+                break
+            self.func(self.interval_time)
+
+
 class SocketPoolManager(object):
     """Pool of socket manager"""
 
     def __init__(self, conn_factory, backend_mod=None, max_pool=10,
-                 verify_interval_time=0):
+                 verify_interval_time=50):
         self.max_pool = max_pool
         self.pools = CustomRecentlyUsedContainer(max_pool, dispose_func=lambda p: p.invalidate_all())
         self.conn_factory = conn_factory
@@ -33,10 +53,9 @@ class SocketPoolManager(object):
         self.backend_mod = backend_mod
         self.sem = self.backend_mod.Semaphore(1)
 
-        self._reaper = None
+        self.run_func = None
         if verify_interval_time > 0:
-            self.verify_interval_time = verify_interval_time
-            self.start_verifying()
+            VerifyThread(self.verify_pools, verify_interval_time)
 
     @property
     def size(self):
@@ -56,34 +75,19 @@ class SocketPoolManager(object):
                         pool = self.init_pool(host, port)
         return pool
 
-    def init_pool(self, host=None, port=80, active_count=3, max_count=10, life_time=50):
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10, life_time=55):
         with self.sem:
-            pool = SocketPool(self.conn_factory, host, port, active_count, max_count, life_time, self.backend_mod)
+            pool = SocketPool(self.conn_factory, self.backend_mod, host, port, active_count, max_count, life_time)
             self.pools[(host, port)] = pool
         return pool
 
-    def verify_pools(self):
+    def verify_pools(self, verify_interval_time=50):
         for key in self.pools.keys():
             pool = self.pools.get(key)
             if pool:
                 with self.sem:
-                    if pool.size() <= 0:
-                        del self.pools[key]
-                    else:
-                        pool.verify_all()
-
-    def start_verifying(self):
-        pass
-        # TODO 启动新线程/协程 轮询保活方法
-        # self.verify_pools
-        # self._reaper = self.backend_mod.ConnectionReaper(self,
-        #                                                  delay=self.reap_delay)
-
-    def release_connection(self, conn):
-        if self._reaper is not None:
-            self._reaper.ensure_started()
-
-        self.put_connect(conn)
+                    if pool.size > 0:
+                        pool.verify_all(verify_interval_time)
 
     def put_connect(self, conn: Connector):
         pool = self.get_pool(conn.host, conn.port, False)
