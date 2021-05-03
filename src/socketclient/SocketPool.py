@@ -49,17 +49,18 @@ class SocketPool(object):
 
     def is_valid_connect(self, conn: Connector, verify_time=time.time(), verify_interval_time=0):
         if conn.is_connected():
-            if conn.is_connecting():
-                interval_time = conn.connect_time() + self.life_time - verify_time
-                if interval_time > 0:
-                    # TODO 保活
-                    # if interval_time - verify_interval_time < 0:
-                    #     conn.keep_connect(verify_time)
-                    return True
-                else:
-                    return False
-            else:
-                return False
+            return conn.is_connecting()
+            # TODO 保活
+            # if conn.is_connecting():
+                # interval_time = conn.connect_time() + self.life_time - verify_time
+                # if interval_time > 0:
+                #     if interval_time - verify_interval_time < 0:
+                #         conn.keep_connect(verify_time)
+                #     return True
+                # else:
+                #     return False
+            # else:
+            #     return False
         return not conn.is_closed()
 
     def verify_connect(self, conn: Connector, verify_time=time.time(), verify_interval_time=0):

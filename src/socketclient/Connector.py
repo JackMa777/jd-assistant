@@ -2,6 +2,7 @@
 import logging
 import socket
 import ssl
+import sys
 import time
 
 from socketclient import util
@@ -23,9 +24,6 @@ class Connector(object):
 
     def connect(self):
         self._connect_time = time.time()
-        raise NotImplementedError()
-
-    def is_valid_connect(self):
         raise NotImplementedError()
 
     def keep_connect(self):
@@ -57,22 +55,29 @@ class TcpConnector(Connector):
     HTTP = 80
     HTTPS = 443
 
-    def __init__(self, host, port, backend_mod, is_connect=False, timeout=0.5):
+    def __init__(self, host, port, backend_mod, is_connect=False, timeout=0.5, idle_sec=30, interval_sec=10):
         super().__init__(host, port)
         sock = backend_mod.Socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        # TODO 保活未生效
+        sock.settimeout(timeout)
         # 开启保活
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        # 第一次探测时间，单位：秒
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 30)
-        # 第二次及以后探测时间，单位：秒
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 30)
-        # 失败重试次数
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 5)
+        # TODO 对于http连接保活未生效
+        if sys.platform == 'win32':
+            sock.ioctl(socket.SIO_KEEPALIVE_VALS,
+                       (1,  # 开启保活
+                        idle_sec * 1000,  # 闲置时间（第一次探测时间），单位：毫秒
+                        interval_sec * 1000  # 间隔时间（第二次及之后探测时间），单位：毫秒
+                        ))
+        else:
+            # 闲置时间（第一次探测时间），单位：秒
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, idle_sec)
+            # 间隔时间（第二次及之后探测时间），单位：秒
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
+            # 探测次数
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)
         sock.setblocking(True)
-        sock.settimeout(timeout)
         if port == TcpConnector.HTTP:
             pass
         elif port == TcpConnector.HTTPS:
@@ -83,6 +88,7 @@ class TcpConnector(Connector):
         if is_connect:
             self.connect()
         self.backend_mod = backend_mod
+        logger.info("已新建连接")
         # self._s_file = self._s.makefile(mode, bufsize)
 
     def connect(self):
