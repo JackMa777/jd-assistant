@@ -62,13 +62,15 @@ class TcpConnector(Connector):
         sock = backend_mod.Socket(socket.AF_INET, socket.SOCK_STREAM)
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        # TODO 保活，未生效
-        # sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        # sock.ioctl(socket.SIO_KEEPALIVE_VALS,
-        #            (1,               # 开启保活
-        #             50000,           # 第一次探测时间，单位：毫秒
-        #             50000)           # 第二次及以后探测时间，单位：毫秒
-        #            )
+        # TODO 保活未生效
+        # 开启保活
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # 第一次探测时间，单位：秒
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 30)
+        # 第二次及以后探测时间，单位：秒
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 30)
+        # 失败重试次数
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 5)
         sock.setblocking(True)
         sock.settimeout(timeout)
         if port == TcpConnector.HTTP:
@@ -94,9 +96,9 @@ class TcpConnector(Connector):
 
     def keep_connect(self, _time=time.time()):
         # TODO 保活
-        pass
         # self._connect_time = _time
-        # self._s.send(bytes(0xFF))
+        # print(self._s.send(bytes(0xFF)))
+        pass
 
     def send(self, *args):
         self.connect()

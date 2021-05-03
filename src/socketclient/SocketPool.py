@@ -52,8 +52,9 @@ class SocketPool(object):
             if conn.is_connecting():
                 interval_time = conn.connect_time() + self.life_time - verify_time
                 if interval_time > 0:
-                    if interval_time - verify_interval_time < 0:
-                        conn.keep_connect(verify_time)
+                    # TODO 保活
+                    # if interval_time - verify_interval_time < 0:
+                    #     conn.keep_connect(verify_time)
                     return True
                 else:
                     return False
