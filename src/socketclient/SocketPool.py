@@ -10,15 +10,13 @@ class SocketPool(object):
     """Pool of socket connections"""
 
     def __init__(self, conn_factory, backend_mod=None,
-                 host=None, port=80, active_count=3, max_count=10,
-                 life_time=55):
+                 host=None, port=80, active_count=3, max_count=10):
 
         self.conn_factory = conn_factory
         self.host = host
         self.port = port
         self.active_count = active_count
         self.max_count = max_count
-        self.life_time = life_time
         self.backend_mod = backend_mod
 
         self.pool = getattr(backend_mod, 'queue').Queue(max_count)
@@ -47,39 +45,39 @@ class SocketPool(object):
 
         self.sem = self.backend_mod.Semaphore(1)
 
-    def is_valid_connect(self, conn: Connector, verify_time=time.time(), verify_interval_time=0):
-        if conn.is_connected():
-            return conn.is_connecting()
-            # TODO 保活
-            # if conn.is_connecting():
-                # interval_time = conn.connect_time() + self.life_time - verify_time
-                # if interval_time > 0:
-                #     if interval_time - verify_interval_time < 0:
-                #         conn.keep_connect(verify_time)
-                #     return True
-                # else:
-                #     return False
-            # else:
-            #     return False
-        return not conn.is_closed()
+    # 废弃逻辑
+    # def is_valid_connect(self, conn: Connector, verify_time=time.time(), verify_interval_time=0):
+    #     if conn.is_connected():
+    #         if conn.is_connecting():
+    #             interval_time = conn.connect_time() + self.life_time - verify_time
+    #             if interval_time > 0:
+    #                 if interval_time - verify_interval_time < 0:
+    #                     conn.keep_connect(verify_time)
+    #                 return True
+    #             else:
+    #                 return False
+    #         else:
+    #             return False
+    #     return not conn.is_closed()
 
-    def verify_connect(self, conn: Connector, verify_time=time.time(), verify_interval_time=0):
+    @staticmethod
+    def verify_connect(conn: Connector, verify_time=time.time()):
         if not conn:
             return False
-        elif self.is_valid_connect(conn, verify_time, verify_interval_time):
+        elif conn.is_valid(verify_time):
             return True
         else:
             conn.invalidate()
             return False
 
-    def verify_all(self, verify_interval_time=50):
+    def verify_all(self):
         active_count = 0
         now = time.time()
         for i in range(self.max_count):
             conn = None
             try:
                 conn = self.pool.get_nowait()
-                if self.verify_connect(conn, now, verify_interval_time):
+                if self.verify_connect(conn, now):
                     if conn.is_connected():
                         active_count += 1
                     elif self.active_count > active_count:
@@ -197,7 +195,7 @@ class SocketPool(object):
                 try:
                     size -= 1
                     conn = self.pool.get_nowait()
-                    if self.is_valid_connect(conn):
+                    if conn.is_valid():
                         conn.connect()
                         self.pool.put_nowait(conn)
                     else:

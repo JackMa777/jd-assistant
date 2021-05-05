@@ -37,7 +37,7 @@ class VerifyThread(threading.Thread):
             time.sleep(self.interval_time)
             if self.forceStop:
                 break
-            self.func(self.interval_time)
+            self.func()
 
 
 class SocketPoolManager(object):
@@ -75,19 +75,19 @@ class SocketPoolManager(object):
                         pool = self.init_pool(host, port)
         return pool
 
-    def init_pool(self, host=None, port=80, active_count=3, max_count=10, life_time=55):
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10):
         with self.sem:
-            pool = SocketPool(self.conn_factory, self.backend_mod, host, port, active_count, max_count, life_time)
+            pool = SocketPool(self.conn_factory, self.backend_mod, host, port, active_count, max_count)
             self.pools[(host, port)] = pool
         return pool
 
-    def verify_pools(self, verify_interval_time=50):
+    def verify_pools(self):
         for key in self.pools.keys():
             pool = self.pools.get(key)
             if pool:
                 with self.sem:
                     if pool.size > 0:
-                        pool.verify_all(verify_interval_time)
+                        pool.verify_all()
 
     def put_connect(self, conn: Connector):
         pool = self.get_pool(conn.host, conn.port, False)

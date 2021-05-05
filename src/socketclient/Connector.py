@@ -26,7 +26,7 @@ class Connector(object):
         self._connect_time = time.time()
         raise NotImplementedError()
 
-    def keep_connect(self):
+    def is_valid(self, verify_time=time.time()):
         raise NotImplementedError()
 
     def send(self, data):
@@ -61,9 +61,8 @@ class TcpConnector(Connector):
         # 禁用Nagle算法
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.settimeout(timeout)
-        # 开启保活
+        # 开启保活，对于http连接保活无效
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        # TODO 对于http连接保活未生效
         if sys.platform == 'win32':
             sock.ioctl(socket.SIO_KEEPALIVE_VALS,
                        (1,  # 开启保活
@@ -88,7 +87,8 @@ class TcpConnector(Connector):
         if is_connect:
             self.connect()
         self.backend_mod = backend_mod
-        logger.info("已新建连接")
+        self.keep_time = None
+        # logger.debug("已新建连接")
         # self._s_file = self._s.makefile(mode, bufsize)
 
     def connect(self):
@@ -100,8 +100,24 @@ class TcpConnector(Connector):
         self._connected = True
         self._connect_time = time.time()
 
+    def is_valid(self, verify_time=time.time()):
+        if self.is_connected():
+            return self.is_connecting()
+            # 执行自定义保活，不启用
+            # if self.is_connecting():
+            #     # 可自定义条件
+            #     self.keep_connect(verify_time)
+            #     return True
+            # else:
+            #     return False
+        return not self.is_closed()
+
+    def keep_time(self):
+        return self.keep_time
+
     def keep_connect(self, _time=time.time()):
-        # TODO 保活
+        # TODO http保活
+        self.keep_time = _time
         # self._connect_time = _time
         # print(self._s.send(bytes(0xFF)))
         pass
@@ -109,6 +125,9 @@ class TcpConnector(Connector):
     def send(self, *args):
         self.connect()
         return self._s.sendall(*args)
+
+    def recv(self, size=1024):
+        return self._s.recv(size)
 
     def do_func(self, func, **params):
         if func:
@@ -124,14 +143,14 @@ class TcpConnector(Connector):
     def is_closed(self):
         return self._closed or self._s._closed
 
-    def handle_exception(self, exception):
-        logger.error('异常：%s', exception)
-
     def invalidate(self):
         if not self._closed:
             self._s.close()
             # self._s_file.close()
             self._closed = True
+
+    def handle_exception(self, exception):
+        logger.error('异常：%s', exception)
 
     # def __del__(self):
     #     self.invalidate()
@@ -144,6 +163,3 @@ class TcpConnector(Connector):
 
     # def readlines(self, sizehint=0):
     #     return self._s_file.readlines(sizehint)
-
-    def recv(self, size=1024):
-        return self._s.recv(size)
