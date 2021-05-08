@@ -81,8 +81,6 @@ class TcpConnector(Connector):
             pass
         elif port == TcpConnector.HTTPS:
             sock = ssl.wrap_socket(sock)
-        else:
-            raise Exception("端口错误")
         self._s = sock
         if is_connect:
             self.connect()

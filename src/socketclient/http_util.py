@@ -33,7 +33,8 @@ def get_host_and_port(url, return_uri=False):
         return host, port
 
 
-def mark_http_req_host_port_byte(url, method='GET', params=None, data=None, headers=None, cookies=None):
+def mark_http_req_byte(url, method='GET', params=None, data=None, headers=None, cookies=None,
+                       is_return_host_port=False):
     host, port, uri = get_host_and_port(url, True)
     uri_list = ['/', uri]
     if params:
@@ -84,7 +85,10 @@ def mark_http_req_host_port_byte(url, method='GET', params=None, data=None, head
     else:
         msg_list.append(f'{headers_str}Connection: keep-alive\r\n\r\n')
         b_msg_array.extend(''.join(msg_list).encode())
-    return host, port, bytes(b_msg_array)
+    if is_return_host_port:
+        return host, port, bytes(b_msg_array)
+    else:
+        return bytes(b_msg_array)
 
 
 def get_conn_http_response(conn: Connector):
@@ -123,7 +127,7 @@ def get_socket_http_response(sock):
 
 def send_http_request(sc: SocketClient, url, method='GET', params=None, data=None, headers=None, cookies=None,
                       res_func=None):
-    host, port, byte_msg = mark_http_req_host_port_byte(url, method, params, data, headers, cookies)
+    host, port, byte_msg = mark_http_req_byte(url, method, params, data, headers, cookies, True)
     with sc.get_connect(host, port) as conn:
         # 发送报文
         conn.send(byte_msg)

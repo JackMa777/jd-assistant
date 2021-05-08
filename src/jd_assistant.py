@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 import CustomBrowser
 import address_util
 import cookie_util
+from socketclient import http_util
 from socketclient.SocketClient import SocketClient
 from config import global_config
 from exception import AsstException
@@ -44,7 +45,7 @@ class Assistant(object):
 
     def __init__(self, ):
         self.config = None
-        self.socket_list = []
+        self.socket_client = SocketClient()
         use_random_ua = global_config.getboolean('config', 'random_useragent')
         self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
         self.headers = {'User-Agent': self.user_agent}
@@ -1205,8 +1206,7 @@ class Assistant(object):
         self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
 
         Timer.setSystemTime()
-
-        # TODO 从倒计时开始添加多进程，后续流程都使用多进程执行
+        # TODO 使用多进程需要从倒计时前开始，后续流程都使用多进程执行
 
         # 2.倒计时
         logger.info('准备抢购商品:%s', list(items_dict.keys()))
@@ -1218,6 +1218,7 @@ class Assistant(object):
         else:
             t.start()
 
+        # TODO 使用协程/多线程从执行开始
         # 3.执行
         for sku_id in items_dict:
             logger.info('开始抢购商品:%s', sku_id)
@@ -1248,11 +1249,11 @@ class Assistant(object):
 
                 while retry_count < 10:
                     try:
-                        resp = self.socket_list[0].send_http_request(url='https://itemko.jd.com/itemShowBtn',
-                                                                     method='GET',
-                                                                     headers=get_sku_seckill_url_request_headers,
-                                                                     params=payload
-                                                                     , cookies=self.cookies_str)
+                        resp = http_util.send_http_request(self.socket_client, url='https://itemko.jd.com/itemShowBtn',
+                                                           method='GET',
+                                                           headers=get_sku_seckill_url_request_headers,
+                                                           params=payload
+                                                           , cookies=self.cookies_str)
                         resp_data = resp.body
                         resp_json = parse_json(resp_data)
                         if resp_json.get('url'):
@@ -1331,9 +1332,9 @@ class Assistant(object):
                 logger.info('访问商品抢购链接请求')
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
                 url = self.seckill_url.get(sku_id)
-                resp = self.socket_list[1].send_http_request(url=url, method='GET',
-                                                             headers=request_sku_seckill_url_request_headers,
-                                                             cookies=self.cookies_str)
+                resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
+                                                   headers=request_sku_seckill_url_request_headers,
+                                                   cookies=self.cookies_str)
                 # 从响应头中提取cookies并更新
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
@@ -1359,14 +1360,14 @@ class Assistant(object):
                 logger.info('抢购订单结算页面请求')
                 url = 'https://marathon.jd.com/seckill/seckill.action'
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
-                resp = self.socket_list[2].send_http_request(url=url, method='GET',
-                                                             params={
-                                                                 'skuId': sku_id,
-                                                                 'num': num,
-                                                                 'rid': int(time.time())
-                                                             },
-                                                             headers=request_seckill_checkout_page_request_headers,
-                                                             cookies=self.cookies_str)
+                resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
+                                                   params={
+                                                       'skuId': sku_id,
+                                                       'num': num,
+                                                       'rid': int(time.time())
+                                                   },
+                                                   headers=request_seckill_checkout_page_request_headers,
+                                                   cookies=self.cookies_str)
                 # 从响应头中提取cookies并更新
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
@@ -1395,14 +1396,14 @@ class Assistant(object):
             def get_seckill_init_info_request(sku_id, num=1):
                 logger.info('获取秒杀初始化信息')
                 url = 'https://marathon.jd.com/seckillnew/orderService/pc/init.action'
-                resp = self.socket_list[3].send_http_request(url=url, method='POST',
-                                                             data={
-                                                                 'sku': sku_id,
-                                                                 'num': num,
-                                                                 'isModifyAddress': 'false',
-                                                             },
-                                                             headers=get_seckill_init_info_request_headers,
-                                                             cookies=self.cookies_str)
+                resp = http_util.send_http_request(self.socket_client, url=url, method='POST',
+                                                   data={
+                                                       'sku': sku_id,
+                                                       'num': num,
+                                                       'isModifyAddress': 'false',
+                                                   },
+                                                   headers=get_seckill_init_info_request_headers,
+                                                   cookies=self.cookies_str)
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 self.get_and_update_cookies_str()
                 return resp.body
@@ -1441,11 +1442,11 @@ class Assistant(object):
                 while retry_count < 10:
                     resp_json = None
                     try:
-                        resp = self.socket_list[4].send_http_request(url=url, method='POST',
-                                                                     params={'skuId': sku_id},
-                                                                     data=self.seckill_order_data.get(sku_id),
-                                                                     headers=submit_seckill_order_request_headers,
-                                                                     cookies=self.cookies_str)
+                        resp = http_util.send_http_request(self.socket_client, url=url, method='POST',
+                                                           params={'skuId': sku_id},
+                                                           data=self.seckill_order_data.get(sku_id),
+                                                           headers=submit_seckill_order_request_headers,
+                                                           cookies=self.cookies_str)
                         body = resp.body
                         logger.info(body)
                         resp_json = parse_json(body)
@@ -1715,28 +1716,25 @@ class Assistant(object):
                 'pcount': config.num,
                 'ptype': 1,
             }
-            b_msg = SocketClient.mark_byte_msg(url='https://cart.jd.com/gate.action',
-                                               method='GET',
-                                               headers=add_cart_request_headers,
-                                               params=params)
+            host, port, b_msg = http_util.mark_http_req_byte(url='https://cart.jd.com/gate.action',
+                                                             method='GET',
+                                                             headers=add_cart_request_headers,
+                                                             params=params, is_return_host_port=True)
 
             def add_cart_request(params):
                 logger.info('添加购物车请求')
-                # TODO
-                conn = self.socket_list[0]
                 i = 0
                 while i < 3:
                     try:
-                        def res_func(conn):
+                        def res_func(_conn):
                             while True:
-                                data = conn.recv(1)
+                                data = _conn.recv(1)
                                 logger.info('已接收-为提高抢购速度，已截断响应数据')
                                 break
 
-                        conn.connect()
-                        conn.send(b_msg)
+                        conn = self.socket_client.send(host, port, b_msg)
                         logger.info('已发送')
-                        conn.get_socket_http_response(res_func)
+                        conn.do_func(res_func)
                         break
                     except Exception as e:
                         i += 1
@@ -1787,7 +1785,7 @@ class Assistant(object):
                                 logger.info('已接收-为提高抢购速度，已截断响应数据')
                                 break
 
-                        self.socket_list[1].send_http_request(
+                        self.socket_client[1].send_http_request(
                             url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
                             headers=get_checkout_page_request_headers, params=params, res_func=res_func)
                         break
@@ -1876,13 +1874,12 @@ class Assistant(object):
             def submit_order_request():
                 submit_order_request_data['riskControl'] = self.risk_control
                 logger.info('提交订单请求')
-                sock = self.socket_list[2]
                 try:
-                    resp = sock.send_http_request(
-                        url='https://trade.jd.com/shopping/order/submitOrder.action',
-                        method='POST',
-                        headers=submit_order_request_headers,
-                        data=submit_order_request_data)
+                    resp = http_util.send_http_request(self.socket_client,
+                                                       url='https://trade.jd.com/shopping/order/submitOrder.action',
+                                                       method='POST',
+                                                       headers=submit_order_request_headers,
+                                                       data=submit_order_request_data)
                     response_data = resp.body
                     if response_data:
                         try:
@@ -1970,28 +1967,22 @@ class Assistant(object):
 
     def make_seckill_connect(self):
         # 获取商品抢购链接请求
-        self.socket_list.append(SocketClient(443, 'itemko.jd.com'))
+        self.socket_client.init_pool("itemko.jd.com", 443)
         # 访问商品抢购链接请求
-        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
         # 访问抢购订单结算页面请求方法
-        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
         # 获取秒杀初始化信息请求
-        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
         # 提交抢购（秒杀）订单请求
-        self.socket_list.append(SocketClient(443, 'marathon.jd.com'))
+        self.socket_client.init_pool("marathon.jd.com", 443, 3, 20)
 
     def make_reserve_seckill_connect(self):
-        self.socket_list.append(SocketClient(443, 'cart.jd.com'))
-        self.socket_list.append(SocketClient(443, 'trade.jd.com'))
-        self.socket_list.append(SocketClient(443, 'trade.jd.com'))
+        self.socket_client.init_pool("cart.jd.com", 443)
+        self.socket_client.init_pool("trade.jd.com", 443, 3, 15)
 
     def connect_now(self):
-        for sock in self.socket_list:
-            sock.connect()
+        self.socket_client.connect()
 
     def close_now(self):
-        for sock in self.socket_list:
-            sock.close_client()
+        self.socket_client.close_client()
 
     def get_and_update_cookies_str(self):
         cookie_array = []
