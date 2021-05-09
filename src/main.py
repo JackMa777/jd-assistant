@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
-from config import CustomConfig
+
 from jd_assistant import Assistant
 
 if __name__ == '__main__':
@@ -10,39 +10,10 @@ if __name__ == '__main__':
     chromedriver下载：https://sites.google.com/a/chromium.org/chromedriver/home
     """
 
-    config = CustomConfig()
-    config.sku_id = '100012043978'  # 商品id
-    config.buy_time = '2021-03-01 11:59:59.970'  # 开始抢购时间，格式：'2020-11-28 12:59:59.950'，建议设置提前0.050秒，如果网络慢可根据自己网络情况适当修改
-
-    # 配置【预约抢购，不会自动加入购物车】
-    config.sku_buy_time = '2021-03-01 12:00:00.000'  # 该商品指定抢购时间，格式：'2021-01-28 14:00:00.000'，为整点，后续会改为自动设置，暂时保留
-
-    # 配置【预约抢购，自动加入购物车】
-    # 注意：一定要在抢购开始前手动清空购物车中此类无法勾选的商品！（因为脚本在执行清空购物车操作时，无法清空不能勾选的商品）
-    # config.is_pass_cart = False  # 是否跳过添加购物车，默认False
-
     asst = Assistant()  # 初始化
     asst.login_by_QRcode()  # 扫码登陆
 
-    # 执行【预约抢购，自动加入购物车】 手动清空自动添加到购物车的
-    # asst.exec_reserve_seckill_by_time(config)
-
-    # 执行【预约抢购，不会自动加入购物车】
-    asst.exec_seckill_by_time(config)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    asst.start_by_config()
 
     # 根据商品是否有货自动下单
     # 6个参数：

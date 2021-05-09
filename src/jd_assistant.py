@@ -276,7 +276,7 @@ class Assistant(object):
         }
         headers = {
             'User-Agent': self.user_agent,
-            'Referer': 'https://passport.jd.com/new/login.aspx',
+            'Referer': 'https://passport.jd.com/',
         }
         resp = self.sess.get(url=url, headers=headers, params=payload)
 
@@ -300,7 +300,7 @@ class Assistant(object):
         }
         headers = {
             'User-Agent': self.user_agent,
-            'Referer': 'https://passport.jd.com/new/login.aspx',
+            'Referer': 'https://passport.jd.com/',
         }
         resp = self.sess.get(url=url, headers=headers, params=payload)
 
@@ -1029,7 +1029,7 @@ class Assistant(object):
             'Host': 'itemko.jd.com',
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
-        retry_interval = 0.2
+        retry_interval = global_config.retry_interval
         retry_count = 0
 
         while retry_count < 10:
@@ -1244,7 +1244,7 @@ class Assistant(object):
                     '_': str(server_buy_time * 1000),
                 }
                 get_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
-                retry_interval = 0.2
+                retry_interval = config.retry_interval
                 retry_count = 0
 
                 while retry_count < 10:
@@ -1990,3 +1990,11 @@ class Assistant(object):
             cookie_array.append(f'{cookie.name}={cookie.value};')
         self.cookies_str = ''.join(cookie_array)
         return self.cookies_str
+
+    def start_by_config(self, config=global_config):
+        if config.select_mode == 1:
+            # 执行【预约抢购，不会自动加入购物车】
+            self.exec_seckill_by_time(config)
+        elif config.select_mode == 2:
+            # 执行【预约抢购，自动加入购物车】 手动清空自动添加到购物车的
+            self.exec_reserve_seckill_by_time(config)

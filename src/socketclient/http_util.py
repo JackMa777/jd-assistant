@@ -109,8 +109,8 @@ def get_socket_http_response(sock):
         will_close = r.will_close
         http_response = HTTPResponse.from_httplib(r)
         if will_close and will_close != _UNKNOWN:
-            logger.info('数据已接收，主机关闭了连接')
-            # sock.close()
+            # logger.debug('数据已接收，主机关闭了连接')
+            sock.close()
     except Exception as e:
         logger.error('数据接收异常：%s', e)
     finally:
@@ -131,7 +131,7 @@ def send_http_request(sc: SocketClient, url, method='GET', params=None, data=Non
     with sc.get_connect(host, port) as conn:
         # 发送报文
         conn.send(byte_msg)
-        logger.info('已发送')
+        # logger.debug('已发送')
         # print(byte_msg)
         # 读取报文
         if res_func:

@@ -68,25 +68,28 @@ class Timer(object):
     def setSystemTime():
         url = 'https://a.jd.com//ajax/queryServerData.html'
 
-        session = requests.session()
+        try:
+            session = requests.session()
 
-        # get server time
-        t0 = datetime.now()
-        ret = session.get(url).text
-        t1 = datetime.now()
+            # get server time
+            t0 = datetime.now()
+            ret = session.get(url).text
+            t1 = datetime.now()
 
-        js = json.loads(ret)
-        t = float(js["serverTime"]) / 1000
-        dt = datetime.fromtimestamp(t) + ((t1 - t0) / 2)
+            if not ret:
+                logger.error('同步京东服务器时间失败，时间同步接口已失效')
+                return
+            js = json.loads(ret)
+            t = float(js["serverTime"]) / 1000
+            dt = datetime.fromtimestamp(t) + ((t1 - t0) / 2)
 
-        sys = platform.system()
-        if sys == "Windows":
-            import win_util
-            win_util.setWinSystemTime(dt)
-        elif sys == "Linux":
-            try:
+            sys = platform.system()
+            if sys == "Windows":
+                import win_util
+                win_util.setWinSystemTime(dt)
+            elif sys == "Linux":
                 os.system(f'date -s "{dt.strftime("%Y-%m-%d %H:%M:%S.%f000")}"')
                 logger.info('已同步京东服务器时间：%s' % dt)
-            except Exception as e:
-                logger.error('同步京东服务器时间失败，请检查权限')
-                logger.error(e)
+        except Exception as e:
+            logger.error('同步京东服务器时间失败，请检查权限')
+            logger.error(e)

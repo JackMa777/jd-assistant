@@ -60,7 +60,7 @@ class SocketClient(object):
         with self.get_connect(host, port) as conn:
             # 发送报文
             conn.send(byte_msg)
-            logger.info('已发送')
+            # logger.debug('已发送')
         return conn
 
     def close_client(self):
