@@ -1,11 +1,15 @@
-# JD-Assistant
+# 魔改JD-Assistant
 
 [![version](https://img.shields.io/badge/python-3.4+-blue.svg)](https://www.python.org/download/releases/3.4.0/) 
 [![status](https://img.shields.io/badge/status-stable-green.svg)](https://github.com/tychxn/jd-assistant)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![star, issue](https://img.shields.io/badge/star%2C%20issue-welcome-brightgreen.svg)](https://github.com/tychxn/jd-assistant)
 
-# 魔改jd-assistant
+#### http请求客户端使用自己定制的SocketClient（内部维护连接池，抢购前建立连接）
+#### 抢购调用接口未修改，都是原作者提供，可能已失效，不确保可用
+#### 暂未启用并发
+
+##### 该项目仅供学习参考
 
 ## 运行环境
 

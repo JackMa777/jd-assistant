@@ -1967,16 +1967,16 @@ class Assistant(object):
 
     def make_seckill_connect(self):
         # 获取商品抢购链接请求
-        self.socket_client.init_pool("itemko.jd.com", 443)
+        self.socket_client.init_pool("itemko.jd.com", 443, 1)
         # 访问商品抢购链接请求
         # 访问抢购订单结算页面请求方法
         # 获取秒杀初始化信息请求
         # 提交抢购（秒杀）订单请求
-        self.socket_client.init_pool("marathon.jd.com", 443, 3, 20)
+        self.socket_client.init_pool("marathon.jd.com", 443, 1, 20)
 
     def make_reserve_seckill_connect(self):
-        self.socket_client.init_pool("cart.jd.com", 443)
-        self.socket_client.init_pool("trade.jd.com", 443, 3, 15)
+        self.socket_client.init_pool("cart.jd.com", 443, 1)
+        self.socket_client.init_pool("trade.jd.com", 443, 1, 15)
 
     def connect_now(self):
         self.socket_client.connect()
