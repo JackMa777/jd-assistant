@@ -1086,7 +1086,12 @@ class Assistant(object):
         :return: 初始化信息组成的dict
         """
         content = self.request_info['get_seckill_init_info_request'](sku_id, num)
-        return parse_json(content)
+        try:
+            return parse_json(content)
+        except Exception as e:
+            logger.error('获取秒杀初始化信息失败，响应数据：{}，异常：{}', content, e)
+            exit(-1)
+        return None
 
     def _gen_seckill_order_data(self, sku_id, num=1):
         """生成提交抢购订单所需的请求体参数

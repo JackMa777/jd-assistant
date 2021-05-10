@@ -22,7 +22,7 @@ class Timer(object):
         # '2018-09-28 22:45:50.000'
         self.buy_time = datetime.strptime(buy_time, "%Y-%m-%d %H:%M:%S.%f")
         self.fast_buy_time = self.buy_time + timedelta(seconds=-3)
-        self.connect_time = self.buy_time + timedelta(seconds=-3)
+        self.connect_time = self.buy_time + timedelta(seconds=-20)
         self.sleep_interval = sleep_interval
         self.fast_sleep_interval = fast_sleep_interval
 
@@ -33,7 +33,7 @@ class Timer(object):
         check_timestamp = None
         buy_time_timestamp = self.buy_time.timestamp()
         fast_buy_time_timestamp = self.fast_buy_time.timestamp()
-        # connect_time_timestamp = self.connect_time.timestamp()
+        connect_time_timestamp = self.connect_time.timestamp()
         fast_sleep_interval = self.fast_sleep_interval
         sleep_interval = self.sleep_interval
         while True:
@@ -50,6 +50,10 @@ class Timer(object):
                         if assistant is not None:
                             assistant.connect_now()
                             is_connected = True
+                elif now > connect_time_timestamp:
+                    if not is_connected and assistant is not None:
+                        assistant.connect_now()
+                        is_connected = True
                 else:
                     # 保活
                     if assistant is not None:
