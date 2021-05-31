@@ -1,13 +1,12 @@
-import logging
 from http import client
 
 from urllib3 import HTTPResponse
 
-import cookie_util
-from socketclient import Connector
+from socketclient.Connector import Connector
 from socketclient.SocketClient import SocketClient
+from socketclient.utils import cookie_util
+from socketclient.log import logger
 
-logger = logging.getLogger()
 
 DEFAULT_HEADERS = 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
 
@@ -20,7 +19,7 @@ def get_host_and_port(url, return_uri=False):
         port = 443
     elif url.startswith('http://'):
         url = url[7:]
-        # TODO
+        # TODO 处理其他端口
         port = 80
     url_split = url.split('/', 1)
     host = url_split[0]

@@ -1,11 +1,9 @@
 import contextlib
-import logging
 
 from socketclient.Connector import TcpConnector
 from socketclient.SocketPoolManager import SocketPoolManager
+from socketclient.log import logger
 from socketclient.util import load_backend
-
-logger = logging.getLogger()
 
 
 class SocketClient(object):

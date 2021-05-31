@@ -2,8 +2,8 @@
 import queue
 import time
 
-from log import logger
-from socketclient import Connector
+from socketclient.Connector import Connector
+from socketclient.log import logger
 
 
 class SocketPool(object):
@@ -219,4 +219,4 @@ class SocketPool(object):
                 break
             except Exception as e:
                 logger.error('新建连接异常：%s', e)
-        logger.info("与主机[%s]端口[%s]成功建立[%s]个连接", self.host, self.port, self.pool.qsize())
+        logger.info("与主机[%s]端口[%s]新建[%s]个连接", self.host, self.port, self.pool.qsize())

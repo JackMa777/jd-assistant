@@ -5,7 +5,7 @@ import time
 
 from urllib3._collections import RecentlyUsedContainer
 
-from socketclient import Connector
+from socketclient.Connector import Connector
 from socketclient.SocketPool import SocketPool
 from socketclient.util import load_backend
 

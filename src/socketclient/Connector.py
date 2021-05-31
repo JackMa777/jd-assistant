@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -
-import logging
 import socket
 import ssl
 import sys
 import time
 
 from socketclient import util
-
-logger = logging.getLogger()
+from socketclient.log import logger
 
 
 class Connector(object):
@@ -148,7 +146,7 @@ class TcpConnector(Connector):
             self._closed = True
 
     def handle_exception(self, exception):
-        logger.error('异常：%s', exception)
+        logger.error('连接异常：%s', exception)
 
     # def __del__(self):
     #     self.invalidate()

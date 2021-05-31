@@ -2,7 +2,7 @@ from http.cookiejar import CookieJar
 
 from requests import cookies, models
 
-from log import logger
+from socketclient.log import logger
 
 
 def merge_cookies_from_response(cookie_jar, http_response, url):
