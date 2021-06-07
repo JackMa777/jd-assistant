@@ -39,7 +39,7 @@ def get_user_address(main_obj):
         finally:
             time.sleep(0.05)
 
-    area_url = 'https://d.jd.com/area/get'
+    area_url = 'https://fts.jd.com/area/get'
     area_params = {
         'fid': '0'
     }

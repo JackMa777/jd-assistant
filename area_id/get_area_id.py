@@ -27,7 +27,7 @@ provinces = [
 
 
 def get_area_by_id(_id):
-    base_uri = 'https://d.jd.com/area/get'
+    base_uri = 'https://fts.jd.com/area/get'
     payload = {'fid': _id}
     resp = requests.get(url=base_uri, params=payload)
     return json.loads(resp.text)
