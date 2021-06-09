@@ -1234,9 +1234,31 @@ class Assistant(object):
         # 提前初始化请求信息、方法
         self.get_and_update_cookies_str()
         config = self.config
+        sku_id = config.sku_id
 
         # 初始化获取商品抢购链接请求方法
         get_sku_seckill_url_request_headers = self.headers.copy()
+
+        area_id = parse_area_id(area)
+        cat = self.item_cat.get(config)
+        vender_id = self.item_vender_ids.get(sku_id)
+        retry_count = 0
+        while not cat:
+            page = self._get_item_detail_page(sku_id)
+            match = re.search(r'cat: \[(.*?)\]', page.text)
+            cat = match.group(1)
+            self.item_cat[sku_id] = cat
+
+            match = re.search(r'venderId:(\d*?),', page.text)
+            vender_id = match.group(1)
+            self.item_vender_ids[sku_id] = vender_id
+            if retry_count > 10:
+                logger.error('无法获取cat，超出重试次数，抢购停止')
+                exit(-1)
+            else:
+                retry_count += 1
+                logger.error('无法获取cat，开始第 %s 次重试', retry_count)
+
         if fast_mode:
             get_sku_seckill_url_request_headers['Host'] = 'itemko.jd.com'
 
@@ -1245,16 +1267,22 @@ class Assistant(object):
                 payload = {
                     'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
                     'skuId': sku_id,
-                    'from': 'pc',
-                    '_': str(server_buy_time * 1000),
+                    'cat': cat,
+                    'area': area_id,
+                    'shopId': vender_id,
+                    'venderId': vender_id,
+                    # TODO 完善
+                    'paramJson': f'{"platform2":"1","specialAttrStr":"p0pp1ppppppp2ppppppppppp","skuMarkStr":"00"}',
+                    'num': 1,
                 }
-                get_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
+                get_sku_seckill_url_request_headers['Referer'] = 'https://item.jd.com/'
                 retry_interval = config.retry_interval
                 retry_count = 0
 
                 while retry_count < 10:
                     try:
-                        resp = http_util.send_http_request(self.socket_client, url='https://itemko.jd.com/itemShowBtn',
+                        resp = http_util.send_http_request(self.socket_client,
+                                                           url='https://item-soa.jd.com/getWareBusiness',
                                                            method='GET',
                                                            headers=get_sku_seckill_url_request_headers,
                                                            params=payload
