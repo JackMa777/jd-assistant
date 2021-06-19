@@ -14,7 +14,7 @@ class Config(object):
             raise FileNotFoundError("No such file: config.ini")
         self._config = configparser.ConfigParser()
         self._config.read(self._path, encoding='utf-8')
-        select_mode = self._config.getint('config', 'select_mode')
+        select_mode = self._config.getint('mode', 'select_mode')
         if not select_mode:
             select_mode = 1
         self.select_mode = select_mode

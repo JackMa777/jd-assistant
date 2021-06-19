@@ -12,6 +12,8 @@ class CustomBrowser(object):
         chrome_options = webdriver.ChromeOptions()
         chrome_options.headless = True
         chrome_options.add_argument('--no-sandbox')
+        # chrome_options.add_argument('--no-proxy-server')
+        # chrome_options.add_argument('--proxy-server=127.0.0.1:8080')
         chrome_options.add_argument(f'user-agent="{user_agent}"')
         chrome_options.add_argument(f'--user-data-dir={os.path.dirname(os.getcwd())}/Browser/Data')
         chrome_options.add_argument(f'-–disk-cache-dir={os.path.dirname(os.getcwd())}/Browser/Cache')
@@ -23,10 +25,10 @@ class CustomBrowser(object):
         else:
             self.client = webdriver.Chrome(chrome_options=chrome_options)
         client = self.client
-        domain = 'jd.com'
-        url = f'www.{domain}'
-        client.get(f'https://{url}')
-        time.sleep(1)
+        # client.delete_all_cookies()
+        domain = '.jd.com'
+        url = f'https://www{domain}'
+        client.get(url)
         for cookie in iter(cookies):
             if domain in cookie.domain:
                 cookie_dict = {
@@ -47,7 +49,6 @@ class CustomBrowser(object):
         if jsScript:
             js_str = jsScript.js_str
             if js_str:
-                time.sleep(2)
                 js_data = client.execute_script(js_str)
                 js_callback = jsScript.js_callback
                 if isfunction(js_callback):

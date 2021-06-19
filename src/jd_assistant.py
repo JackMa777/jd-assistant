@@ -13,13 +13,13 @@ from bs4 import BeautifulSoup
 
 import CustomBrowser
 import address_util
-from socketclient.utils import cookie_util
-from socketclient.utils import http_util
-from socketclient import SocketClient
 from config import global_config
 from exception import AsstException
 from log import logger
 from messenger import Messenger
+from socketclient import SocketClient
+from socketclient.utils import cookie_util
+from socketclient.utils import http_util
 from timer import Timer
 from util import (
     DEFAULT_TIMEOUT,
@@ -1236,7 +1236,7 @@ class Assistant(object):
 
     def init_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息、方法
-        self.get_and_update_cookies_str()
+        # self.get_and_update_cookies_str()
         config = self.config
         sku_id = config.sku_id
 
@@ -1295,11 +1295,11 @@ class Assistant(object):
                                                            url='https://item-soa.jd.com/getWareBusiness',
                                                            method='GET',
                                                            headers=get_sku_seckill_url_request_headers,
-                                                           params=payload
-                                                           , cookies=self.cookies_str)
+                                                           params=payload,
+                                                           cookies=self.get_cookies_str_by_domain_or_path(
+                                                               'item-soa.jd.com'))
                         resp_data = resp.body
                         resp_json = parse_json(resp_data)
-                        # TODO 修改
                         yuyue_info = resp_json.get('yuyueInfo')
                         if yuyue_info:
                             # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
@@ -1386,10 +1386,10 @@ class Assistant(object):
                 url = self.seckill_url.get(sku_id)
                 resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
                                                    headers=request_sku_seckill_url_request_headers,
-                                                   cookies=self.cookies_str)
+                                                   cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
                 # 从响应头中提取cookies并更新
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                self.get_and_update_cookies_str()
+                # self.get_and_update_cookies_str()
         else:
             def request_sku_seckill_url_request(sku_id):
                 headers = {
@@ -1419,10 +1419,10 @@ class Assistant(object):
                                                        'rid': int(time.time())
                                                    },
                                                    headers=request_seckill_checkout_page_request_headers,
-                                                   cookies=self.cookies_str)
+                                                   cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
                 # 从响应头中提取cookies并更新
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                self.get_and_update_cookies_str()
+                # self.get_and_update_cookies_str()
         else:
             def request_seckill_checkout_page_request(sku_id, num):
                 url = 'https://marathon.jd.com/seckill/seckill.action'
@@ -1455,9 +1455,10 @@ class Assistant(object):
                                                        'isModifyAddress': 'false',
                                                    },
                                                    headers=get_seckill_init_info_request_headers,
-                                                   cookies=self.cookies_str)
+                                                   cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
+                # 从响应头中提取cookies并更新
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                self.get_and_update_cookies_str()
+                # self.get_and_update_cookies_str()
                 return resp.body
         else:
             def get_seckill_init_info_request(sku_id, num=1):
@@ -1498,7 +1499,8 @@ class Assistant(object):
                                                            params={'skuId': sku_id},
                                                            data=self.seckill_order_data.get(sku_id),
                                                            headers=submit_seckill_order_request_headers,
-                                                           cookies=self.cookies_str)
+                                                           cookies=self.get_cookies_str_by_domain_or_path(
+                                                               'marathon.jd.com'))
                         body = resp.body
                         logger.info(body)
                         resp_json = parse_json(body)
@@ -1720,6 +1722,8 @@ class Assistant(object):
             #     'upgrade-insecure-requests': '1',
             # }
 
+            is_expt = True
+
             def jsCallback(data):
                 # print(data)
                 eid = data['eid']
@@ -1737,7 +1741,7 @@ class Assistant(object):
             jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
                                             'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
                                             'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
-                                            'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<3;count++){'
+                                            'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<20;count++){'
                                             'try{getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
                                             'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
                                             'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
@@ -1748,46 +1752,48 @@ class Assistant(object):
             br.quit()
         except Exception as e:
             logger.error(e)
-            logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置')
-            logger.info('chromedriver可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本，复制exe文件路径配置到chromedriver_path即可')
-            logger.info('chrome自行下载即可，精简版复制chrome.exe文件路径配置到chrome_path即可')
+            logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
+            logger.info(
+                'chromedriver可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本，复制文件路径到chromedriver_path即可')
+            logger.info('chrome自行下载即可，精简版复制chrome可执行文件路径到chrome_path即可')
+            is_expt = False
 
         if not self.eid or not self.fp or not self.track_id:
-            logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            if is_expt:
+                logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
             exit(-1)
 
     def init_reserve_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息、方法
-        cookie_str = self.get_and_update_cookies_str()
-        config = self.config
+        # self.get_and_update_cookies_str()
+        # config = self.config
         # 初始化添加购物车请求方法
         add_cart_request_headers = self.headers.copy()
         if fast_mode:
-            add_cart_request_headers['cookie'] = cookie_str
-            params = {
-                'pid': config.sku_id,
-                'pcount': config.num,
-                'ptype': 1,
-            }
-            host, port, b_msg = http_util.mark_http_req_byte(url='https://cart.jd.com/gate.action',
-                                                             method='GET',
-                                                             headers=add_cart_request_headers,
-                                                             params=params, is_return_host_port=True)
+            # add_cart_request_headers['cookie'] = cookie_str
 
             def add_cart_request(params):
                 logger.info('添加购物车请求')
                 i = 0
                 while i < 3:
                     try:
-                        def res_func(_conn):
-                            while True:
-                                data = _conn.recv(1)
-                                logger.info('已接收-为提高抢购速度，已截断响应数据')
-                                break
+                        # def res_func(_conn):
+                        #     while True:
+                        #         data = _conn.recv(1)
+                        #         logger.info('添加购物车请求已接收-为提高抢购速度，已截断响应数据')
+                        #         break
 
-                        conn = self.socket_client.send(host, port, b_msg)
-                        logger.info('已发送')
-                        conn.do_func(res_func)
+                        url = 'https://cart.jd.com/gate.action'
+                        resp = http_util.send_http_request(self.socket_client,
+                                                           url=url,
+                                                           method='GET',
+                                                           headers=add_cart_request_headers,
+                                                           cookies=self.get_cookies_str_by_domain_or_path(
+                                                               'cart.jd.com'),
+                                                           params=params)
+                        # 从响应头中提取cookies并更新
+                        # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                        # self.get_and_update_cookies_str()
                         break
                     except Exception as e:
                         i += 1
@@ -1825,26 +1831,34 @@ class Assistant(object):
         get_checkout_page_request_headers = self.headers.copy()
         # 初始化订单结算页请求方法
         if fast_mode and is_risk_control is False:
-            get_checkout_page_request_headers['cookie'] = cookie_str
+            # get_checkout_page_request_headers['cookie'] = cookie_str
 
             def get_checkout_page_request(params):
                 logger.info('订单结算请求')
                 i = 0
                 while i < 3:
                     try:
-                        def res_func(conn):
-                            while True:
-                                data = conn.recv(1)
-                                logger.info('已接收-为提高抢购速度，已截断响应数据')
-                                break
+                        # def res_func(conn):
+                        #     while True:
+                        #         data = conn.recv(1)
+                        #         logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
+                        #         break
 
-                        self.socket_client[1].send_http_request(
-                            url='https://trade.jd.com/shopping/order/getOrderInfo.action', method='GET',
-                            headers=get_checkout_page_request_headers, params=params, res_func=res_func)
+                        url = 'https://trade.jd.com/shopping/order/getOrderInfo.action'
+                        resp = http_util.send_http_request(self.socket_client,
+                                                           url=url,
+                                                           method='GET',
+                                                           headers=get_checkout_page_request_headers,
+                                                           cookies=self.get_cookies_str_by_domain_or_path(
+                                                               'trade.jd.com'),
+                                                           params=params)
+                        # 从响应头中提取cookies并更新
+                        # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                        # self.get_and_update_cookies_str()
                         break
                     except Exception as e:
                         i += 1
-                        logger.error('订单结算页面数据连接超时，开始第 %s 次重试，信息：%s', i, e)
+                        logger.error('订单结算请求数据连接超时，开始第 %s 次重试，信息：%s', i, e)
         else:
             def get_checkout_page_request(params):
                 i = 0
@@ -1922,7 +1936,7 @@ class Assistant(object):
             submit_order_request_data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
 
         if fast_mode:
-            submit_order_request_headers['cookie'] = cookie_str
+            # submit_order_request_headers['cookie'] = cookie_str
 
             def submit_order_request():
                 submit_order_request_data['riskControl'] = self.risk_control
@@ -1932,6 +1946,7 @@ class Assistant(object):
                                                        url='https://trade.jd.com/shopping/order/submitOrder.action',
                                                        method='POST',
                                                        headers=submit_order_request_headers,
+                                                       cookies=self.get_cookies_str_by_domain_or_path('trade.jd.com'),
                                                        data=submit_order_request_data)
                     response_data = resp.body
                     if response_data:
@@ -1964,7 +1979,7 @@ class Assistant(object):
                             logger.info('数据解析异常，响应数据：\n %s', response_data)
                             return False
                     else:
-                        logger.info('下单请求异常')
+                        logger.info('下单请求异常，无响应数据')
                         return False
                 except Exception as e:
                     logger.error(e)
@@ -2043,6 +2058,16 @@ class Assistant(object):
             cookie_array.append(f'{cookie.name}={cookie.value};')
         self.cookies_str = ''.join(cookie_array)
         return self.cookies_str
+
+    def get_cookies_str_by_domain_or_path(self, domain=None, path=None):
+        cookie_array = []
+        for cookie in iter(self.sess.cookies):
+            if (
+                    (domain is None or cookie.domain in domain) and
+                    (path is None or cookie.path == path)
+            ):
+                cookie_array.append(f'{cookie.name}={cookie.value};')
+        return ''.join(cookie_array)
 
     def start_by_config(self, config=global_config):
         if config.select_mode == 1:
