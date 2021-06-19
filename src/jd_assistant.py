@@ -1755,7 +1755,7 @@ class Assistant(object):
             logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
             logger.info(
                 'chromedriver可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本，复制文件路径到chromedriver_path即可')
-            logger.info('chrome自行下载即可，精简版复制chrome可执行文件路径到chrome_path即可')
+            logger.info('chrome需自行下载，安装版无需配置，精简版复制chrome可执行文件路径到chrome_path即可')
             is_expt = False
 
         if not self.eid or not self.fp or not self.track_id:
