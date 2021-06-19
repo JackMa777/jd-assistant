@@ -75,6 +75,7 @@ def get_user_address(main_obj):
                     f'{province_id}-{default_address_json["cityId"]}-{default_address_json["countyId"]}-{default_address_json["townId"]}.{default_address_json["id"]}',
                     domain='.jd.com', path='/')
         cookies.set('ipLocation', ipLocation, domain='.jd.com', path='/')
+        main_obj.area_id = f'{province_id}_{default_address_json["cityId"]}_{default_address_json["countyId"]}_{default_address_json["townId"]}'
         return True
     else:
         return False

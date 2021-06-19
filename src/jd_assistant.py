@@ -46,19 +46,23 @@ class Assistant(object):
     def __init__(self, ):
         self.config = None
         self.socket_client = SocketClient()
+
+        # 功能相关
+        self.chromedriver_path = global_config.get('config', 'chromedriver_path')
+        self.chrome_path = global_config.get('config', 'chrome_path')
+        self.timeout = float(global_config.get('config', 'timeout') or DEFAULT_TIMEOUT)
+        self.send_message = global_config.getboolean('messenger', 'enable')
+        self.messenger = Messenger(global_config.get('messenger', 'sckey')) if self.send_message else None
         use_random_ua = global_config.getboolean('config', 'random_useragent')
         self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
         self.headers = {'User-Agent': self.user_agent}
+
+        # 用户相关
         self.eid = global_config.get('config', 'eid')
         self.fp = global_config.get('config', 'fp')
         self.track_id = global_config.get('config', 'track_id')
         self.risk_control = global_config.get('config', 'risk_control')
-        self.chromedriver_path = global_config.get('config', 'chromedriver_path')
-        self.chrome_path = global_config.get('config', 'chrome_path')
-
-        self.timeout = float(global_config.get('config', 'timeout') or DEFAULT_TIMEOUT)
-        self.send_message = global_config.getboolean('messenger', 'enable')
-        self.messenger = Messenger(global_config.get('messenger', 'sckey')) if self.send_message else None
+        self.area_id = None
 
         self.item_cat = dict()
         self.item_vender_ids = dict()  # 记录商家id
@@ -1239,7 +1243,7 @@ class Assistant(object):
         # 初始化获取商品抢购链接请求方法
         get_sku_seckill_url_request_headers = self.headers.copy()
 
-        area_id = parse_area_id(area)
+        area_id = parse_area_id(self.area_id)
         cat = self.item_cat.get(config)
         vender_id = self.item_vender_ids.get(sku_id)
         retry_count = 0
@@ -1252,6 +1256,13 @@ class Assistant(object):
             match = re.search(r'venderId:(\d*?),', page.text)
             vender_id = match.group(1)
             self.item_vender_ids[sku_id] = vender_id
+
+            match = re.search(r'paramJson:( )?\'(\{(.)*\})\'', page.text)
+            param_json = match.group(1)
+            if param_json == ' ':
+                param_json = match.group(2)
+            if cat:
+                break
             if retry_count > 10:
                 logger.error('无法获取cat，超出重试次数，抢购停止')
                 exit(-1)
@@ -1271,8 +1282,7 @@ class Assistant(object):
                     'area': area_id,
                     'shopId': vender_id,
                     'venderId': vender_id,
-                    # TODO 完善
-                    'paramJson': f'{"platform2":"1","specialAttrStr":"p0pp1ppppppp2ppppppppppp","skuMarkStr":"00"}',
+                    'paramJson': param_json,
                     'num': 1,
                 }
                 get_sku_seckill_url_request_headers['Referer'] = 'https://item.jd.com/'
@@ -1289,9 +1299,11 @@ class Assistant(object):
                                                            , cookies=self.cookies_str)
                         resp_data = resp.body
                         resp_json = parse_json(resp_data)
-                        if resp_json.get('url'):
+                        # TODO 修改
+                        yuyue_info = resp_json.get('yuyueInfo')
+                        if yuyue_info:
                             # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                            router_url = 'https:' + resp_json.get('url')
+                            router_url = 'https:' + yuyue_info.get('url')
                             # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
                             seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
                                                                                            'captcha.html')
