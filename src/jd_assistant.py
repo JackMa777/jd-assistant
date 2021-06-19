@@ -1303,18 +1303,25 @@ class Assistant(object):
                         yuyue_info = resp_json.get('yuyueInfo')
                         if yuyue_info:
                             # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                            router_url = 'https:' + yuyue_info.get('url')
-                            # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                            seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
-                                                                                           'captcha.html')
-                            logger.info("抢购链接获取成功: %s", seckill_url)
-                            return seckill_url
+                            url = yuyue_info.get('url')
+                            if url:
+                                router_url = 'https:' + url
+                                # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                                seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
+                                                                                               'captcha.html')
+                                logger.info("抢购链接获取成功: %s", seckill_url)
+                                return seckill_url
+                            else:
+                                retry_count += 1
+                                logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                                if resp_data:
+                                    logger.info(f"响应数据：{resp_data}")
+                                time.sleep(retry_interval)
                         else:
-                            retry_count += 1
-                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             if resp_data:
                                 logger.info(f"响应数据：{resp_data}")
-                            time.sleep(retry_interval)
+                            logger.info("商品%s不是 预约抢购商品 或 未开始预约，本次抢购结束", sku_id)
+                            exit(-1)
                     except Exception as e:
                         retry_count += 1
                         logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
