@@ -1747,9 +1747,10 @@ class Assistant(object):
             # 关闭浏览器
             br.quit()
         except Exception as e:
+            logger.error(e)
             logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置')
-            logger.info('chromedriver_path可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本')
-            logger.info('chrome自行下载即可')
+            logger.info('chromedriver可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本，复制exe文件路径配置到chromedriver_path即可')
+            logger.info('chrome自行下载即可，精简版复制chrome.exe文件路径配置到chrome_path即可')
 
         if not self.eid or not self.fp or not self.track_id:
             logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
