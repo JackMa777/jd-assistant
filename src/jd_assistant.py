@@ -1892,7 +1892,7 @@ class Assistant(object):
                     exit(-1)
                 else:
                     count += 1
-                    logger.error('初始化下单参数失败！开始第 %s 次重试')
+                    logger.info('初始化下单参数失败！开始第 %s 次重试', count)
         if br:
             # 关闭浏览器
             br.quit()
