@@ -1270,14 +1270,14 @@ class Assistant(object):
                         time.sleep(interval)
                     else:
                         logger.info('执行结束，提交订单失败！')
-
-                    if self.config.fast_mode:
-                        self.close_now()
                     continue
 
             # 开始抢购
             self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]),
                               config.fast_mode)
+
+        if self.config.fast_mode:
+            self.close_now()
 
     def parse_item_detail_page(self, sku_id, page):
         match = re.search(r'cat: \[(.*?)\]', page.text)
