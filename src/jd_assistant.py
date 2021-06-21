@@ -1339,15 +1339,16 @@ class Assistant(object):
                 cat = self.item_cat.get(sku_id)
         vender_id = self.item_vender_ids.get(sku_id)
         param_json = self.param_json.get(sku_id)
+        special_attrs = self.special_attrs.get(sku_id)
 
         if fast_mode:
             get_sku_seckill_url_request_headers['Host'] = 'itemko.jd.com'
 
-            if 'isKO' in self.special_attrs:
+            if 'isKO' in special_attrs:
                 def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
                     logger.info('获取抢购链接')
                     payload = {
-                        'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+                        # 'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
                         'skuId': sku_id,
                         'from': 'pc',
                         '_': str(server_buy_time * 1000),
@@ -1376,14 +1377,14 @@ class Assistant(object):
                                 return seckill_url
                             else:
                                 retry_count += 1
-                                logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                                 if resp_data:
                                     logger.info(f"响应数据：{resp_data}")
+                                logger.info("商品%s第%s次获取抢购链接失败，链接为空，%s秒后重试", sku_id, retry_count, retry_interval)
                                 time.sleep(retry_interval)
                         except Exception as e:
                             retry_count += 1
-                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             logger.error("异常信息：%s", e)
+                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             time.sleep(retry_interval)
 
                     logger.error("抢购链接获取失败，终止抢购！")
@@ -1392,7 +1393,7 @@ class Assistant(object):
                 def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
                     logger.info('获取抢购链接')
                     payload = {
-                        'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+                        # 'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
                         'skuId': sku_id,
                         'cat': cat,
                         'area': area_id,
@@ -1423,7 +1424,7 @@ class Assistant(object):
                                 if url:
                                     if 'toYuyue.action' in url:
                                         retry_count += 1
-                                        logger.info("商品%s正在预约中，暂未开始抢购，%s秒后开始第%s次重试", sku_id, retry_interval, retry_count)
+                                        logger.info("商品%s正在预约中，暂未开始抢购，开始第%s次重试", sku_id, retry_count)
                                         continue
                                     router_url = 'https:' + url
                                     # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
@@ -1433,9 +1434,9 @@ class Assistant(object):
                                     return seckill_url
                                 else:
                                     retry_count += 1
-                                    logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                                     if resp_data:
                                         logger.info(f"响应数据：{resp_data}")
+                                    logger.info("商品%s第%s次获取抢购链接失败，链接为空，%s秒后重试", sku_id, retry_count, retry_interval)
                                     time.sleep(retry_interval)
                             else:
                                 if resp_data:
@@ -1444,8 +1445,8 @@ class Assistant(object):
                                 exit(-1)
                         except Exception as e:
                             retry_count += 1
-                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             logger.error("异常信息：%s", e)
+                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             time.sleep(retry_interval)
 
                     logger.error("抢购链接获取失败，终止抢购！")
@@ -1481,14 +1482,14 @@ class Assistant(object):
                             return seckill_url
                         else:
                             retry_count += 1
-                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             if resp.text:
                                 logger.info(f"响应数据：{resp.text}")
+                            logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             time.sleep(retry_interval)
                     except Exception as e:
                         retry_count += 1
-                        logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                         logger.info("异常信息：%s", e)
+                        logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                         time.sleep(retry_interval)
 
                 logger.error("抢购链接获取失败，终止抢购！")
