@@ -1,4 +1,6 @@
 # -*- coding:utf-8 -*-
+import gevent
+from gevent import monkey; monkey.patch_all()
 import json
 import os
 import platform
@@ -13,7 +15,7 @@ from log import logger
 
 class Timer(object):
 
-    def __init__(self, buy_time, sleep_interval=1, fast_sleep_interval=0.01, is_sync=True):
+    def __init__(self, buy_time, sleep_interval=1, fast_sleep_interval=0.01, is_sync=True, assistant=None):
 
         # 同步京东服务器时间
         if is_sync is True:
@@ -25,38 +27,49 @@ class Timer(object):
         self.connect_time = self.buy_time + timedelta(seconds=-20)
         self.sleep_interval = sleep_interval
         self.fast_sleep_interval = fast_sleep_interval
+        self.buy_time_timestamp = self.buy_time.timestamp()
+        self.fast_buy_time_timestamp = self.fast_buy_time.timestamp()
+        self.connect_time_timestamp = self.connect_time.timestamp()
+        self.is_connected = False
+        self.now_time = time.time
+        self.assistant = assistant
+        self.fast_mode = assistant.config.fast_mode
+        if self.fast_mode:
+            assistant.make_seckill_connect()
 
-    def start(self, assistant=None):
+    def start(self):
         logger.info('正在等待到达设定时间：%s' % self.buy_time)
-        is_connected = False
-        now_time = time.time
         check_timestamp = None
+        assistant = self.assistant
         buy_time_timestamp = self.buy_time.timestamp()
         fast_buy_time_timestamp = self.fast_buy_time.timestamp()
         connect_time_timestamp = self.connect_time.timestamp()
         fast_sleep_interval = self.fast_sleep_interval
         sleep_interval = self.sleep_interval
         while True:
-            now = now_time()
+            now = self.now_time()
             if now > buy_time_timestamp:
-                logger.info('时间到达，开始执行')
+                logger.info('时间超出，开始执行')
+                self.assistant.start_func()
                 break
             else:
                 if now > fast_buy_time_timestamp:
-                    if is_connected:
+                    if self.is_connected:
                         time.sleep(fast_sleep_interval)
                     else:
                         # if now_time() > connect_time_timestamp and sock_conn_func is not None:
-                        if assistant is not None:
+                        if self.fast_mode:
                             assistant.connect_now()
-                            is_connected = True
+                            self.is_connected = True
                 elif now > connect_time_timestamp:
-                    if not is_connected and assistant is not None:
+                    if not self.is_connected and self.fast_mode:
                         assistant.connect_now()
-                        is_connected = True
+                        self.is_connected = True
+                        logger.info('时间接近，开启%s并发倒计时', assistant.concurrent_count)
+                        break
                 else:
                     # 保活
-                    if assistant is not None:
+                    if self.fast_mode:
                         if check_timestamp is None:
                             check_timestamp = now + 1800 + random.randint(-10, 10)
                         elif now > check_timestamp:
@@ -67,6 +80,26 @@ class Timer(object):
                                 logger.error("账户已离线，请重新登录！")
                                 exit(-1)
                     time.sleep(sleep_interval)
+        # 开启协程
+        for i in range(assistant.concurrent_count):
+            assistant.concurrent_array.append(gevent.spawn(self.ready_call))
+        gevent.joinall(assistant.concurrent_array)
+
+    def ready_call(self):
+        while True:
+            now = self.now_time()
+            if now > self.buy_time_timestamp:
+                logger.info('时间到达，开始执行')
+                self.assistant.start_func()
+                break
+            else:
+                if self.is_connected:
+                    time.sleep(self.fast_sleep_interval)
+                else:
+                    # if now_time() > connect_time_timestamp and sock_conn_func is not None:
+                    if self.fast_mode:
+                        self.is_connected = True
+                        self.assistant.connect_now()
 
     @staticmethod
     def setSystemTime():

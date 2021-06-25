@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from gevent import monkey; monkey.patch_all()
 import json
 import os
 import pickle
@@ -48,6 +49,9 @@ class Assistant(object):
         self.socket_client = SocketClient()
 
         # 功能相关
+        self.concurrent_array = []
+        self.concurrent_count = global_config.concurrent_count
+        self.start_func = None
         self.chromedriver_path = global_config.get('config', 'chromedriver_path')
         self.chrome_path = global_config.get('config', 'chrome_path')
         self.timeout = float(global_config.get('config', 'timeout') or DEFAULT_TIMEOUT)
@@ -1062,7 +1066,11 @@ class Assistant(object):
         :return:
         """
         if not self.seckill_url.get(sku_id):
-            self.seckill_url[sku_id] = self.request_info['get_sku_seckill_url_request'](sku_id, server_buy_time)
+            seckill_url = self.request_info['get_sku_seckill_url_request'](sku_id, server_buy_time)
+            if seckill_url is not None:
+                self.seckill_url[sku_id] = seckill_url
+            else:
+                return None
         return self.request_info['request_sku_seckill_url_request'](sku_id)
 
     @deprecated
@@ -1174,6 +1182,7 @@ class Assistant(object):
         :return: 抢购结果 True/False
         """
 
+        # TODO 兼容并发
         for count in range(1, retry + 1):
             logger.info('第[%s/%s]次尝试抢购商品:%s', count, retry, sku_id)
 
@@ -1227,54 +1236,55 @@ class Assistant(object):
         self.init_default_order_request_method(config.fast_mode, config.is_risk_control)
 
         Timer.setSystemTime()
-        # TODO 使用多进程需要从倒计时前开始，后续流程都使用多进程执行
+
+        # 使用多进程需要从倒计时前开始，后续流程都使用多进程执行
+
+        def start_func():
+
+            # 使用协程/多线程从执行开始
+            # 3.执行
+            for sku_id in items_dict:
+                logger.info('开始抢购商品:%s', sku_id)
+
+                # 获取抢购链接
+                resp = self.request_seckill_url(sku_id, server_buy_time)
+                if resp is not None and resp.status == 302:
+                    location = resp.headers['location']
+                    logger.info('访问商品抢购链接请求，重定向地址：%s', location)
+                    if 'gate.action' in location:
+                        # 此处转入正常购物车下单流程
+                        add_cart_request = self.request_info['add_cart_request']
+                        payload = {
+                            'pid': sku_id,
+                            'pcount': config.num,
+                            'ptype': 1,
+                        }
+                        add_cart_request(payload)
+                        # 获取订单结算页面信息
+                        self.get_checkout_page_detail()
+                        retry = config.retry
+                        interval = config.interval
+                        for count in range(1, retry + 1):
+                            logger.info('第[%s/%s]次尝试提交订单', count, retry)
+                            if self.submit_order():
+                                break
+                            logger.info('休息%ss', interval)
+                            time.sleep(interval)
+                        else:
+                            logger.info('执行结束，提交订单失败！')
+                        continue
+
+                # 开始抢购
+                self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]),
+                                  config.fast_mode)
+
+        self.start_func = start_func
 
         # 2.倒计时
         logger.info('准备抢购商品:%s', list(items_dict.keys()))
-        t = Timer(buy_time=realy_buy_time, sleep_interval=config.sleep_interval,
-                  fast_sleep_interval=config.fast_sleep_interval, is_sync=False)
-        if self.config.fast_mode:
-            self.make_seckill_connect()
-            t.start(self)
-        else:
-            t.start()
 
-        # TODO 使用协程/多线程从执行开始
-        # 3.执行
-        for sku_id in items_dict:
-            logger.info('开始抢购商品:%s', sku_id)
-
-            # 获取抢购链接
-            resp = self.request_seckill_url(sku_id, server_buy_time)
-            if resp.status == 302:
-                location = resp.headers['location']
-                logger.info('访问商品抢购链接请求，重定向地址：%s', location)
-                if 'gate.action' in location:
-                    # 此处转入正常购物车下单流程
-                    add_cart_request = self.request_info['add_cart_request']
-                    payload = {
-                        'pid': sku_id,
-                        'pcount': config.num,
-                        'ptype': 1,
-                    }
-                    add_cart_request(payload)
-                    # 获取订单结算页面信息
-                    self.get_checkout_page_detail()
-                    retry = config.retry
-                    interval = config.interval
-                    for count in range(1, retry + 1):
-                        logger.info('第[%s/%s]次尝试提交订单', count, retry)
-                        if self.submit_order():
-                            break
-                        logger.info('休息%ss', interval)
-                        time.sleep(interval)
-                    else:
-                        logger.info('执行结束，提交订单失败！')
-                    continue
-
-            # 开始抢购
-            self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]),
-                              config.fast_mode)
+        Timer(buy_time=realy_buy_time, sleep_interval=config.sleep_interval,
+              fast_sleep_interval=config.fast_sleep_interval, is_sync=False, assistant=self).start()
 
         if self.config.fast_mode:
             self.close_now()
@@ -1356,8 +1366,10 @@ class Assistant(object):
                     get_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
                     retry_interval = config.retry_interval
                     retry_count = 0
-
-                    while retry_count < 10:
+                    while not self.seckill_url.get(sku_id):
+                        if retry_count >= 10:
+                            logger.error("抢购链接获取失败，终止抢购！")
+                            exit(-1)
                         try:
                             resp = http_util.send_http_request(self.socket_client,
                                                                url='https://itemko.jd.com/itemShowBtn',
@@ -1387,8 +1399,6 @@ class Assistant(object):
                             logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             time.sleep(retry_interval)
 
-                    logger.error("抢购链接获取失败，终止抢购！")
-                    exit(-1)
             else:
                 def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
                     logger.info('获取抢购链接')
@@ -1406,7 +1416,10 @@ class Assistant(object):
                     retry_interval = config.retry_interval
                     retry_count = 0
 
-                    while retry_count < 20:
+                    while not self.seckill_url.get(sku_id):
+                        if retry_count >= 10:
+                            logger.error("抢购链接获取失败，终止抢购！")
+                            exit(-1)
                         try:
                             resp = http_util.send_http_request(self.socket_client,
                                                                url='https://item-soa.jd.com/getWareBusiness',
@@ -1448,9 +1461,7 @@ class Assistant(object):
                             logger.error("异常信息：%s", e)
                             logger.info("商品%s第%s次获取抢购链接失败，%s秒后重试", sku_id, retry_count, retry_interval)
                             time.sleep(retry_interval)
-
-                    logger.error("抢购链接获取失败，终止抢购！")
-                    exit(-1)
+                    return None
         else:
             def get_sku_seckill_url_request(sku_id, server_buy_time=int(time.time())):
                 url = 'https://itemko.jd.com/itemShowBtn'
@@ -1520,7 +1531,7 @@ class Assistant(object):
                     'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
                 }
                 return self.sess.get(url=self.seckill_url.get(sku_id), headers=headers, allow_redirects=False,
-                              timeout=(0.1, 0.08))
+                                     timeout=(0.1, 0.08))
         self.request_info['request_sku_seckill_url_request'] = request_sku_seckill_url_request
 
         # 初始化访问抢购订单结算页面请求方法
@@ -1778,42 +1789,42 @@ class Assistant(object):
         # 1.初始化正常下单流程请求信息、方法
         self.init_default_order_request_method(config.fast_mode, config.is_risk_control)
 
+        def start_func():
+
+            # 3.执行
+            if config.is_pass_cart is not True:
+                sku_ids = {config.sku_id: config.num}
+                add_cart_request = self.request_info['add_cart_request']
+
+                for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
+                    payload = {
+                        'pid': sku_id,
+                        'pcount': count,
+                        'ptype': 1,
+                    }
+                    add_cart_request(payload)
+
+            # 获取订单结算页面信息
+            self.get_checkout_page_detail()
+
+            retry = config.retry
+            interval = config.interval
+            for count in range(1, retry + 1):
+                logger.info('第[%s/%s]次尝试提交订单', count, retry)
+                if self.submit_order():
+                    break
+                logger.info('休息%ss', interval)
+                time.sleep(interval)
+            else:
+                logger.info('执行结束，提交订单失败！')
+
+        self.start_func = start_func
+
         # 2.倒计时
         logger.info('准备抢购商品id为：%s', config.sku_id)
-        t = Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
-                  fast_sleep_interval=config.fast_sleep_interval)
-        if self.config.fast_mode:
-            self.make_reserve_seckill_connect()
-            t.start(self)
-        else:
-            t.start()
 
-        # 3.执行
-        if config.is_pass_cart is not True:
-            sku_ids = {config.sku_id: config.num}
-            add_cart_request = self.request_info['add_cart_request']
-
-            for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
-                payload = {
-                    'pid': sku_id,
-                    'pcount': count,
-                    'ptype': 1,
-                }
-                add_cart_request(payload)
-
-        # 获取订单结算页面信息
-        self.get_checkout_page_detail()
-
-        retry = config.retry
-        interval = config.interval
-        for count in range(1, retry + 1):
-            logger.info('第[%s/%s]次尝试提交订单', count, retry)
-            if self.submit_order():
-                break
-            logger.info('休息%ss', interval)
-            time.sleep(interval)
-        else:
-            logger.info('执行结束，提交订单失败！')
+        Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
+              fast_sleep_interval=config.fast_sleep_interval, is_sync=False, assistant=self).start()
 
         if self.config.fast_mode:
             self.close_now()

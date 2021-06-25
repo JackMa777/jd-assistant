@@ -33,6 +33,10 @@ class Config(object):
         self.buy_time = buy_time
 
         # 加载配置
+        concurrent_count = self._config.getint('config', 'concurrent_count')
+        if not concurrent_count:
+            concurrent_count = 3
+        self.concurrent_count = concurrent_count
         retry = self._config.getint('config', 'retry')
         if not retry:
             retry = 5
