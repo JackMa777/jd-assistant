@@ -1519,10 +1519,10 @@ class Assistant(object):
                 resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
                                                    headers=request_sku_seckill_url_request_headers,
                                                    cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
-                return resp
                 # 从响应头中提取cookies并更新
                 cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                 # self.get_and_update_cookies_str()
+                return resp
         else:
             def request_sku_seckill_url_request(sku_id):
                 headers = {
