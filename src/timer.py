@@ -82,8 +82,8 @@ class Timer(object):
                     time.sleep(sleep_interval)
         # 开启协程
         for i in range(assistant.concurrent_count):
-            assistant.concurrent_array.append(gevent.spawn(self.ready_call))
-        gevent.joinall(assistant.concurrent_array)
+            assistant.concurrent_gevent_array.append(gevent.spawn(self.ready_call))
+        gevent.joinall(assistant.concurrent_gevent_array)
 
     def ready_call(self):
         while True:

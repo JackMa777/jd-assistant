@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 from gevent import monkey; monkey.patch_all()
+try:
+    from gevent import lock
+except ImportError:
+    #gevent < 1.0b2
+    from gevent import coros as lock
+
 import json
 import os
 import pickle
@@ -49,7 +55,8 @@ class Assistant(object):
         self.socket_client = SocketClient()
 
         # 功能相关
-        self.concurrent_array = []
+        self.concurrent_gevent_array = []
+        self.sem = lock.BoundedSemaphore(1)
         self.concurrent_count = global_config.concurrent_count
         self.start_func = None
         self.chromedriver_path = global_config.get('config', 'chromedriver_path')
@@ -73,9 +80,18 @@ class Assistant(object):
         self.param_json = dict()  # 记录参数
         self.special_attrs = dict()
 
-        self.seckill_init_info = dict()
-        self.seckill_order_data = dict()
-        self.seckill_url = dict()
+        # self.seckill_init_info = dict()
+        # self.seckill_order_data = dict()
+        # self.seckill_url = dict()
+
+        self.item_requests = []
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
 
         self.username = ''
         self.nick_name = ''
@@ -92,6 +108,34 @@ class Assistant(object):
         if self.is_login:
             self.nick_name = self.get_user_info()
             self._save_cookies()
+
+    @property
+    def seckill_url(self):
+        return self.item_requests[0]
+
+    @property
+    def is_request_seckill_url(self):
+        return self.item_requests[1]
+
+    @property
+    def seckill_init_info(self):
+        return self.item_requests[2]
+
+    @property
+    def seckill_order_data(self):
+        return self.item_requests[3]
+
+    @property
+    def is_seckill_checkout_page(self):
+        return self.item_requests[4]
+
+    @property
+    def is_add_cart_request(self):
+        return self.item_requests[5]
+
+    @property
+    def is_get_checkout_page(self):
+        return self.item_requests[6]
 
     def _load_cookies(self):
         cookies_file = ''
@@ -1100,7 +1144,7 @@ class Assistant(object):
         :return: 初始化信息组成的dict
         """
         count = 1
-        while count < 4:
+        while count < 8:
             logger.info('第 %s 次获取秒杀初始化信息', count)
             content = self.request_info['get_seckill_init_info_request'](sku_id, num)
             try:
@@ -1120,10 +1164,11 @@ class Assistant(object):
         """
 
         # 获取用户秒杀初始化信息
-        if not self.seckill_init_info.get(sku_id):
-            self.seckill_init_info[sku_id] = self._get_seckill_init_info(sku_id)
-
         init_info = self.seckill_init_info.get(sku_id)
+        if not init_info:
+            init_info = self._get_seckill_init_info(sku_id)
+            self.seckill_init_info[sku_id] = init_info
+
         default_address = init_info['addressList'][0]  # 默认地址dict
         invoice_info = init_info.get('invoiceInfo', {})  # 默认发票信息dict, 有可能不返回
         token = init_info['token']
@@ -1248,31 +1293,34 @@ class Assistant(object):
 
                 # 获取抢购链接
                 resp = self.request_seckill_url(sku_id, server_buy_time)
-                if resp is not None and resp.status == 302:
-                    location = resp.headers['location']
-                    logger.info('访问商品抢购链接请求，重定向地址：%s', location)
-                    if 'gate.action' in location:
-                        # 此处转入正常购物车下单流程
-                        add_cart_request = self.request_info['add_cart_request']
-                        payload = {
-                            'pid': sku_id,
-                            'pcount': config.num,
-                            'ptype': 1,
-                        }
-                        add_cart_request(payload)
-                        # 获取订单结算页面信息
-                        self.get_checkout_page_detail()
-                        retry = config.retry
-                        interval = config.interval
-                        for count in range(1, retry + 1):
-                            logger.info('第[%s/%s]次尝试提交订单', count, retry)
-                            if self.submit_order():
-                                break
-                            logger.info('休息%ss', interval)
-                            time.sleep(interval)
-                        else:
-                            logger.info('执行结束，提交订单失败！')
-                        continue
+                if resp is not None:
+                    if resp == 'pass':
+                        pass
+                    elif resp.status == 302:
+                        location = resp.headers['location']
+                        logger.info('访问商品抢购链接请求，重定向地址：%s', location)
+                        if 'gate.action' in location:
+                            # 此处转入正常购物车下单流程
+                            add_cart_request = self.request_info['add_cart_request']
+                            payload = {
+                                'pid': sku_id,
+                                'pcount': config.num,
+                                'ptype': 1,
+                            }
+                            add_cart_request(payload)
+                            # 获取订单结算页面信息
+                            self.get_checkout_page_detail()
+                            retry = config.retry
+                            interval = config.interval
+                            for count in range(1, retry + 1):
+                                logger.info('第[%s/%s]次尝试提交订单', count, retry)
+                                if self.submit_order():
+                                    break
+                                logger.info('休息%ss', interval)
+                                time.sleep(interval)
+                            else:
+                                logger.info('执行结束，提交订单失败！')
+                            continue
 
                 # 开始抢购
                 self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]),
@@ -1516,13 +1564,18 @@ class Assistant(object):
                 logger.info('访问商品抢购链接请求')
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
                 url = self.seckill_url.get(sku_id)
-                resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
-                                                   headers=request_sku_seckill_url_request_headers,
-                                                   cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
-                # 从响应头中提取cookies并更新
-                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                # self.get_and_update_cookies_str()
-                return resp
+                is_pass = self.is_request_seckill_url.get(sku_id)
+                if not is_pass:
+                    resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
+                                                       headers=request_sku_seckill_url_request_headers,
+                                                       cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
+                    # 从响应头中提取cookies并更新
+                    cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                    # self.get_and_update_cookies_str()
+                    self.is_request_seckill_url[sku_id] = 'pass'
+                    return resp
+                else:
+                    return is_pass
         else:
             def request_sku_seckill_url_request(sku_id):
                 headers = {
@@ -1545,18 +1598,24 @@ class Assistant(object):
                 logger.info('抢购订单结算页面请求')
                 url = 'https://marathon.jd.com/seckill/seckill.action'
                 request_sku_seckill_url_request_headers['Referer'] = f'https://item.jd.com/{sku_id}.html'
-                resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
-                                                   params={
-                                                       'skuId': sku_id,
-                                                       'num': num,
-                                                       'rid': int(time.time())
-                                                   },
-                                                   headers=request_seckill_checkout_page_request_headers,
-                                                   cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
-                logger.info(resp.body)
-                # 从响应头中提取cookies并更新
-                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                # self.get_and_update_cookies_str()
+                is_pass = self.is_seckill_checkout_page.get(sku_id)
+                if not is_pass:
+                    resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
+                                                       params={
+                                                           'skuId': sku_id,
+                                                           'num': num,
+                                                           'rid': int(time.time())
+                                                       },
+                                                       headers=request_seckill_checkout_page_request_headers,
+                                                       cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
+                    logger.info(resp.body)
+                    # 从响应头中提取cookies并更新
+                    cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                    # self.get_and_update_cookies_str()
+                    self.is_seckill_checkout_page[sku_id] = True
+                    return resp
+                else:
+                    return is_pass
         else:
             def request_seckill_checkout_page_request(sku_id, num):
                 url = 'https://marathon.jd.com/seckill/seckill.action'
@@ -1920,31 +1979,37 @@ class Assistant(object):
 
             def add_cart_request(params):
                 logger.info('添加购物车请求')
-                i = 0
-                while i < 3:
-                    try:
-                        def res_func(_conn):
-                            while True:
-                                data = _conn.recv(1)
-                                logger.info('添加购物车请求已接收-为提高抢购速度，已截断响应数据')
-                                break
+                # 为提高性能，并发时先校验一次，不满足再进入锁
+                if not self.is_add_cart_request.get(0):
+                    with self.sem:
+                        # 进入锁后，需进行二次校验，要确保只请求了一次
+                        if not self.is_add_cart_request.get(0):
+                            i = 0
+                            while i < 3:
+                                try:
+                                    def res_func(_conn):
+                                        while True:
+                                            data = _conn.recv(1)
+                                            logger.info('添加购物车请求已接收-为提高抢购速度，已截断响应数据')
+                                            break
 
-                        url = 'https://cart.jd.com/gate.action'
-                        resp = http_util.send_http_request(self.socket_client,
-                                                           url=url,
-                                                           method='GET',
-                                                           headers=add_cart_request_headers,
-                                                           cookies=self.get_cookies_str_by_domain_or_path(
-                                                               'cart.jd.com'),
-                                                           params=params,
-                                                           res_func=res_func)
-                        # 从响应头中提取cookies并更新
-                        # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                        # self.get_and_update_cookies_str()
-                        break
-                    except Exception as e:
-                        i += 1
-                        logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
+                                    url = 'https://cart.jd.com/gate.action'
+                                    resp = http_util.send_http_request(self.socket_client,
+                                                                       url=url,
+                                                                       method='GET',
+                                                                       headers=add_cart_request_headers,
+                                                                       cookies=self.get_cookies_str_by_domain_or_path(
+                                                                           'cart.jd.com'),
+                                                                       params=params,
+                                                                       res_func=res_func)
+                                    self.is_add_cart_request[0] = True
+                                    # 从响应头中提取cookies并更新
+                                    # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                                    # self.get_and_update_cookies_str()
+                                    break
+                                except Exception as e:
+                                    i += 1
+                                    logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
         else:
             def add_cart_request(params):
                 i = 0
@@ -1983,30 +2048,32 @@ class Assistant(object):
             def get_checkout_page_request(params):
                 logger.info('订单结算请求')
                 i = 0
-                while i < 3:
-                    try:
-                        def res_func(conn):
-                            while True:
-                                data = conn.recv(1)
-                                logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
-                                break
+                if not self.is_get_checkout_page.get(0):
+                    while i < 3:
+                        try:
+                            def res_func(conn):
+                                while True:
+                                    data = conn.recv(1)
+                                    logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
+                                    break
 
-                        url = 'https://trade.jd.com/shopping/order/getOrderInfo.action'
-                        resp = http_util.send_http_request(self.socket_client,
-                                                           url=url,
-                                                           method='GET',
-                                                           headers=get_checkout_page_request_headers,
-                                                           cookies=self.get_cookies_str_by_domain_or_path(
-                                                               'trade.jd.com'),
-                                                           params=params,
-                                                           res_func=res_func)
-                        # 从响应头中提取cookies并更新
-                        # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
-                        # self.get_and_update_cookies_str()
-                        break
-                    except Exception as e:
-                        i += 1
-                        logger.error('订单结算请求数据连接超时，开始第 %s 次重试，信息：%s', i, e)
+                            url = 'https://trade.jd.com/shopping/order/getOrderInfo.action'
+                            resp = http_util.send_http_request(self.socket_client,
+                                                               url=url,
+                                                               method='GET',
+                                                               headers=get_checkout_page_request_headers,
+                                                               cookies=self.get_cookies_str_by_domain_or_path(
+                                                                   'trade.jd.com'),
+                                                               params=params,
+                                                               res_func=res_func)
+                            self.is_get_checkout_page[0] = True
+                            # 从响应头中提取cookies并更新
+                            # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                            # self.get_and_update_cookies_str()
+                            break
+                        except Exception as e:
+                            i += 1
+                            logger.error('订单结算请求数据连接超时，开始第 %s 次重试，信息：%s', i, e)
         else:
             def get_checkout_page_request(params):
                 i = 0
