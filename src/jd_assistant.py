@@ -1978,14 +1978,14 @@ class Assistant(object):
             # add_cart_request_headers['cookie'] = cookie_str
 
             def add_cart_request(params):
-                logger.info('添加购物车请求')
                 # 为提高性能，并发时先校验一次，不满足再进入锁
                 if not self.is_add_cart_request.get(0):
-                    with self.sem:
-                        # 进入锁后，需进行二次校验，要确保只请求了一次
-                        if not self.is_add_cart_request.get(0):
-                            i = 0
-                            while i < 3:
+                    i = 0
+                    while i < 3:
+                        with self.sem:
+                            # 进入锁后，需进行二次校验，要确保只请求了一次
+                            if not self.is_add_cart_request.get(0):
+                                logger.info('添加购物车请求')
                                 try:
                                     def res_func(_conn):
                                         while True:
