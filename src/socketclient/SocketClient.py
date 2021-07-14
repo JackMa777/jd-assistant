@@ -8,7 +8,7 @@ from socketclient.util import load_backend
 
 class SocketClient(object):
 
-    def __init__(self, conn_factory=TcpConnector, backend="gevent", max_pool=10, retry_count=3,
+    def __init__(self, conn_factory=TcpConnector, backend="thread", max_pool=10, retry_count=3,
                  verify_interval_time=50):
         # backend="gevent"
         # backend="thread"

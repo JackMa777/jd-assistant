@@ -125,9 +125,9 @@ class SocketPool(object):
                         break
                     except Exception as e:
                         logger.error('新建连接异常，host：%s，port：%s，异常：%s', self.host, self.port, e)
-            else:
+            # else:
                 # 不应该会出现，否则打印错误日志
-                logger.error("队列中没有足够空间创建活动连接")
+                # logger.error("队列中没有足够空间创建活动连接")
 
     @property
     def size(self):
@@ -167,7 +167,9 @@ class SocketPool(object):
             now = time.time()
             while True:
                 try:
+                    # TODO 解决死锁
                     conn = self.pool.get_nowait()
+                    # TODO 解决死锁
                     if self.verify_connect(conn, now):
                         return conn
                     else:
@@ -180,13 +182,14 @@ class SocketPool(object):
                     logger.error("异常信息：%s", e)
         try:
             new_item = self.conn_factory(host, port, self.backend_mod)
+            new_item.connect()
+            return new_item
         except Exception as e:
             logger.error("创建连接异常：%s", e)
-        else:
-            # we should be connected now
-            new_item.connect()
-            with self.sem:
-                return new_item
+            return None
+        # else:
+        #     # we should be connected now
+        #     with self.sem:
 
     def connect_all(self):
         size = self.pool.qsize()

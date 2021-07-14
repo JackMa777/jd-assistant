@@ -1,6 +1,8 @@
 # -*- coding:utf-8 -*-
-import gevent
-from gevent import monkey; monkey.patch_all()
+
+# import gevent
+# from gevent import monkey; monkey.patch_all()
+import threading
 import json
 import os
 import platform
@@ -81,9 +83,17 @@ class Timer(object):
                                 exit(-1)
                     time.sleep(sleep_interval)
         # 开启协程
+        # for i in range(assistant.concurrent_count):
+        #     assistant.concurrent_gevent_array.append(gevent.spawn(self.ready_call))
+        # gevent.joinall(assistant.concurrent_gevent_array)
+        # 开启线程
+        thread_list = []
         for i in range(assistant.concurrent_count):
-            assistant.concurrent_gevent_array.append(gevent.spawn(self.ready_call))
-        gevent.joinall(assistant.concurrent_gevent_array)
+            t = threading.Thread(target=self.ready_call)
+            t.start()
+            thread_list.append(t)
+        for t in thread_list:
+            t.join()
 
     def ready_call(self):
         while True:

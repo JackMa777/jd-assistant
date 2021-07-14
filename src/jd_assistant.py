@@ -50,7 +50,7 @@ from util import (
 
 class Assistant(object):
 
-    def __init__(self, ):
+    def __init__(self):
         self.config = None
         self.socket_client = SocketClient()
 
@@ -1568,7 +1568,8 @@ class Assistant(object):
                 if not is_pass:
                     resp = http_util.send_http_request(self.socket_client, url=url, method='GET',
                                                        headers=request_sku_seckill_url_request_headers,
-                                                       cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
+                                                       cookies=self.get_cookies_str_by_domain_or_path(
+                                                           'marathon.jd.com'))
                     # 从响应头中提取cookies并更新
                     cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
                     # self.get_and_update_cookies_str()
@@ -1607,7 +1608,8 @@ class Assistant(object):
                                                            'rid': int(time.time())
                                                        },
                                                        headers=request_seckill_checkout_page_request_headers,
-                                                       cookies=self.get_cookies_str_by_domain_or_path('marathon.jd.com'))
+                                                       cookies=self.get_cookies_str_by_domain_or_path(
+                                                           'marathon.jd.com'))
                     logger.info(resp.body)
                     # 从响应头中提取cookies并更新
                     cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
@@ -2048,14 +2050,16 @@ class Assistant(object):
             def get_checkout_page_request(params):
                 logger.info('订单结算请求')
                 i = 0
+
+                def res_func(conn):
+                    while True:
+                        data = conn.recv(1)
+                        logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
+                        break
+
                 if not self.is_get_checkout_page.get(0):
                     while i < 3:
                         try:
-                            def res_func(conn):
-                                while True:
-                                    data = conn.recv(1)
-                                    logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
-                                    break
 
                             url = 'https://trade.jd.com/shopping/order/getOrderInfo.action'
                             resp = http_util.send_http_request(self.socket_client,
@@ -2249,13 +2253,18 @@ class Assistant(object):
         self.request_info['submit_order_request'] = submit_order_request
 
     def make_seckill_connect(self):
-        # 获取商品抢购链接请求
-        self.socket_client.init_pool("itemko.jd.com", 443, 1)
+        # 获取商品抢购链接请求（多种，目前添加2种）
+        self.socket_client.init_pool("itemko.jd.com", 443, 1, 20)
+        self.socket_client.init_pool("item-soa.jd.com", 443, 1, 20)
         # 访问商品抢购链接请求
+        self.socket_client.init_pool("yushou.jd.com", 443, 1, 10)
         # 访问抢购订单结算页面请求方法
         # 获取秒杀初始化信息请求
+        self.socket_client.init_pool("marathon.jd.com", 443, 1, 10)
+        # 【兼容】购物车请求
+        self.socket_client.init_pool("cart.jd.com", 443, 1, 10)
         # 提交抢购（秒杀）订单请求
-        self.socket_client.init_pool("marathon.jd.com", 443, 1, 20)
+        self.socket_client.init_pool("trade.jd.com", 443, 1, 10)
 
     def make_reserve_seckill_connect(self):
         self.socket_client.init_pool("cart.jd.com", 443, 1)
