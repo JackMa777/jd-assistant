@@ -1424,7 +1424,8 @@ class Assistant(object):
                                                                method='GET',
                                                                headers=get_sku_seckill_url_request_headers,
                                                                params=payload
-                                                               , cookies=self.cookies_str)
+                                                               , cookies=self.get_cookies_str_by_domain_or_path(
+                                                                   'itemko.jd.com'))
                             resp_data = resp.body
                             resp_json = parse_json(resp_data)
                             if resp_json.get('url'):
