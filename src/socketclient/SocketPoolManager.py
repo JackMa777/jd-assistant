@@ -85,9 +85,8 @@ class SocketPoolManager(object):
         for key in self.pools.keys():
             pool = self.pools.get(key)
             if pool:
-                with self.sem:
-                    if pool.size > 0:
-                        pool.verify_all()
+                if pool.size > 0:
+                    pool.verify_all()
 
     def put_connect(self, conn: Connector):
         pool = self.get_pool(conn.host, conn.port, False)
