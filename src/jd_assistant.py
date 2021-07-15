@@ -1953,7 +1953,7 @@ class Assistant(object):
                     break
 
             except Exception as e:
-                if not br:
+                if br:
                     br.close()
                 logger.error(e)
                 logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
