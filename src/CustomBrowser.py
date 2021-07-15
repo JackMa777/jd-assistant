@@ -42,6 +42,9 @@ class CustomBrowser(object):
                     cookie_dict['expiry'] = cookie.expires
                 client.add_cookie(cookie_dict)
 
+    def close(self):
+        self.client.close()
+
     def openUrl(self, url, jsScript=None, timeout=5):
         client = self.client
         client.set_script_timeout(timeout)

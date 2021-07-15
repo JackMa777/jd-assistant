@@ -1953,6 +1953,8 @@ class Assistant(object):
                     break
 
             except Exception as e:
+                if not br:
+                    br.close()
                 logger.error(e)
                 logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
                 logger.info(
@@ -1994,6 +1996,7 @@ class Assistant(object):
                                             data = _conn.recv(1)
                                             logger.info('添加购物车请求已接收-为提高抢购速度，已截断响应数据')
                                             break
+                                        return None
 
                                     url = 'https://cart.jd.com/gate.action'
                                     resp = http_util.send_http_request(self.socket_client,
@@ -2003,7 +2006,8 @@ class Assistant(object):
                                                                        cookies=self.get_cookies_str_by_domain_or_path(
                                                                            'cart.jd.com'),
                                                                        params=params,
-                                                                       res_func=res_func)
+                                                                       # res_func=res_func
+                                                                       )
                                     self.is_add_cart_request[0] = True
                                     # 从响应头中提取cookies并更新
                                     # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
@@ -2056,6 +2060,7 @@ class Assistant(object):
                         data = conn.recv(1)
                         logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
                         break
+                    return None
 
                 if not self.is_get_checkout_page.get(0):
                     while i < 3:
@@ -2069,7 +2074,8 @@ class Assistant(object):
                                                                cookies=self.get_cookies_str_by_domain_or_path(
                                                                    'trade.jd.com'),
                                                                params=params,
-                                                               res_func=res_func)
+                                                               # res_func=res_func
+                                                               )
                             self.is_get_checkout_page[0] = True
                             # 从响应头中提取cookies并更新
                             # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
