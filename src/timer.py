@@ -51,9 +51,11 @@ class Timer(object):
         while True:
             now = self.now_time()
             if now > buy_time_timestamp:
-                logger.info('时间超出，开始执行')
-                self.assistant.start_func()
+                # 临时修改，默认开启并发
                 break
+                # logger.info('时间超出，开始执行')
+                # self.assistant.start_func()
+                # return None
             else:
                 if now > fast_buy_time_timestamp:
                     if self.is_connected:

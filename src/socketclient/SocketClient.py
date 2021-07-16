@@ -22,8 +22,8 @@ class SocketClient(object):
         self.pool_manager = SocketPoolManager(conn_factory, self.backend_mod, max_pool, verify_interval_time)
         self.retry_count = retry_count
 
-    def init_pool(self, host=None, port=80, active_count=3, max_count=10):
-        self.pool_manager.init_pool(host, port, active_count, max_count)
+    def init_pool(self, host=None, port=80, active_count=3, max_count=10, full_init=True):
+        self.pool_manager.init_pool(host, port, active_count, max_count, full_init)
 
     @contextlib.contextmanager
     def get_connect(self, host=None, port=80):
@@ -45,7 +45,7 @@ class SocketClient(object):
         finally:
             self.pool_manager.put_connect(conn)
 
-    # 修改为连接所有
+    # 连接单个，或者所有
     def connect(self, host=None, port=80):
         if host is not None and port is not None:
             pool = self.pool_manager.get_pool(host, port)
