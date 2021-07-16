@@ -115,7 +115,7 @@ class Timer(object):
 
     @staticmethod
     def setSystemTime():
-        url = 'https://a.jd.com//ajax/queryServerData.html'
+        url = 'https://api.m.jd.com/client.action?functionId=queryMaterialProducts&client=wh5'
 
         try:
             session = requests.session()
@@ -129,7 +129,7 @@ class Timer(object):
                 logger.error('同步京东服务器时间失败，时间同步接口已失效')
                 return
             js = json.loads(ret)
-            t = float(js["serverTime"]) / 1000
+            t = float(js["currentTime2"]) / 1000
             dt = datetime.fromtimestamp(t) + ((t1 - t0) / 2)
 
             sys = platform.system()
