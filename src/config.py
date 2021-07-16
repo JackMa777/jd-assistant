@@ -43,7 +43,7 @@ class Config(object):
         self.retry = retry
         interval = self._config.getfloat('config', 'interval')
         if not interval:
-            interval = 0.5
+            interval = 2
         self.interval = interval
         num = self._config.getint('config', 'num')
         if not num:

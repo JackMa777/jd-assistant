@@ -1,12 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from gevent import monkey; monkey.patch_all()
-try:
-    from gevent import lock
-except ImportError:
-    #gevent < 1.0b2
-    from gevent import coros as lock
-
 import json
 import os
 import pickle
@@ -24,7 +17,7 @@ from config import global_config
 from exception import AsstException
 from log import logger
 from messenger import Messenger
-from socketclient import SocketClient
+from socketclient import SocketClient, util
 from socketclient.utils import cookie_util
 from socketclient.utils import http_util
 from timer import Timer
@@ -52,11 +45,13 @@ class Assistant(object):
 
     def __init__(self):
         self.config = None
-        self.socket_client = SocketClient()
+        self.backend_mod = util.load_backend('gevent')
+        self.sem = self.backend_mod.Semaphore(1)
+        self.event = self.backend_mod.Event()
+        self.socket_client = SocketClient(backend=self.backend_mod)
 
         # 功能相关
         self.concurrent_gevent_array = []
-        self.sem = lock.BoundedSemaphore(1)
         self.concurrent_count = global_config.concurrent_count
         self.start_func = None
         self.chromedriver_path = global_config.get('config', 'chromedriver_path')
@@ -1314,10 +1309,11 @@ class Assistant(object):
                             interval = config.interval
                             for count in range(1, retry + 1):
                                 logger.info('第[%s/%s]次尝试提交订单', count, retry)
-                                if self.submit_order():
-                                    break
-                                logger.info('休息%ss', interval)
-                                time.sleep(interval)
+                                with self.sem:
+                                    if self.submit_order():
+                                        break
+                                    logger.info('休息%ss', interval)
+                                    time.sleep(interval)
                             else:
                                 logger.info('执行结束，提交订单失败！')
                             continue
@@ -1425,7 +1421,7 @@ class Assistant(object):
                                                                headers=get_sku_seckill_url_request_headers,
                                                                params=payload
                                                                , cookies=self.get_cookies_str_by_domain_or_path(
-                                                                   'itemko.jd.com'))
+                                    'itemko.jd.com'))
                             resp_data = resp.body
                             resp_json = parse_json(resp_data)
                             if resp_json.get('url'):
@@ -1995,9 +1991,9 @@ class Assistant(object):
                                     def res_func(_conn):
                                         while True:
                                             data = _conn.recv(1)
+                                            _conn.invalidate()
                                             logger.info('添加购物车请求已接收-为提高抢购速度，已截断响应数据')
-                                            break
-                                        return None
+                                            return None
 
                                     url = 'https://cart.jd.com/gate.action'
                                     resp = http_util.send_http_request(self.socket_client,
@@ -2006,9 +2002,7 @@ class Assistant(object):
                                                                        headers=add_cart_request_headers,
                                                                        cookies=self.get_cookies_str_by_domain_or_path(
                                                                            'cart.jd.com'),
-                                                                       params=params,
-                                                                       # res_func=res_func
-                                                                       )
+                                                                       params=params, res_func=res_func)
                                     self.is_add_cart_request[0] = True
                                     # 从响应头中提取cookies并更新
                                     # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
@@ -2017,6 +2011,8 @@ class Assistant(object):
                                 except Exception as e:
                                     i += 1
                                     logger.error('添加购物车请求异常，开始第 %s 次重试，信息：%s', i, e)
+                            else:
+                                break
         else:
             def add_cart_request(params):
                 i = 0
@@ -2059,9 +2055,9 @@ class Assistant(object):
                 def res_func(conn):
                     while True:
                         data = conn.recv(1)
+                        conn.invalidate()
                         logger.info('订单结算请求已接收-为提高抢购速度，已截断响应数据')
-                        break
-                    return None
+                        return None
 
                 if not self.is_get_checkout_page.get(0):
                     while i < 3:
@@ -2074,9 +2070,7 @@ class Assistant(object):
                                                                headers=get_checkout_page_request_headers,
                                                                cookies=self.get_cookies_str_by_domain_or_path(
                                                                    'trade.jd.com'),
-                                                               params=params,
-                                                               # res_func=res_func
-                                                               )
+                                                               params=params, res_func=res_func)
                             self.is_get_checkout_page[0] = True
                             # 从响应头中提取cookies并更新
                             # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)

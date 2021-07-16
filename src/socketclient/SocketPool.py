@@ -167,9 +167,7 @@ class SocketPool(object):
             now = time.time()
             while True:
                 try:
-                    # TODO 解决死锁
                     conn = self.pool.get_nowait()
-                    # TODO 解决死锁
                     if self.verify_connect(conn, now):
                         return conn
                     else:
