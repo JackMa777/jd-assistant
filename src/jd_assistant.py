@@ -1252,26 +1252,10 @@ class Assistant(object):
         # 兼容正常流程：开抢前清空购物车
         self.clear_cart()
 
-        # 处理时间
-        server_buy_time = None
-        realy_buy_time = None
-        if config.sku_buy_time:
-            server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
-            server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
-            if config.buy_time:
-                realy_buy_time = config.buy_time
-            else:
-                realy_buy_time = (server_buy_datetime + timedelta(milliseconds=-50)).strftime("%Y-%m-%d %H:%M:%S.%f")
-        elif config.buy_time:
-            server_buy_datetime = datetime.strptime(config.buy_time, "%Y-%m-%d %H:%M:%S.%f")
-            server_buy_time = int(time.mktime(server_buy_datetime.timetuple()))
-            realy_buy_time = config.buy_time
-        else:
-            exit(-1)
         items_dict = parse_sku_id(sku_ids=config.sku_id)
 
         # 1.提前初始化预约抢购流程请求信息、方法
-        self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
+        server_buy_time, realy_buy_time = self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
         # 兼容正常流程：初始化正常下单流程请求信息、方法
         self.init_default_order_request_method(config.fast_mode, config.is_risk_control)
 
@@ -1365,14 +1349,62 @@ class Assistant(object):
 
         return True
 
+    def init_yuyue_buy_time(self, sku_id=None, header=None, payload=None):
+        if header is None:
+            header = dict()
+        config = self.config
+
+        logger.info('初始化预约抢购时间')
+        # 处理时间
+        server_buy_datetime = None
+        if config.sku_buy_time:
+            # 根据配置初始化
+            server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
+        else:
+            # 自动初始化
+            header['Host'] = 'itemko.jd.com'
+            header['Referer'] = 'https://item.jd.com/'
+            resp = http_util.send_http_request(self.socket_client,
+                                               url='https://item-soa.jd.com/getWareBusiness',
+                                               method='GET',
+                                               headers=header,
+                                               params=payload,
+                                               cookies=self.get_cookies_str_by_domain_or_path(
+                                                   'item-soa.jd.com'))
+            resp_data = resp.body
+            resp_json = parse_json(resp_data)
+            yuyue_info = resp_json.get('yuyueInfo')
+            if yuyue_info:
+                buy_time = yuyue_info.get('buyTime')
+                if buy_time:
+                    buy_time_list = re.findall(r'\d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}', buy_time.strip())
+                    if buy_time_list and len(buy_time_list) == 2:
+                        buy_start_time = buy_time_list[0]
+                        buy_end_time = buy_time_list[1]
+                        server_buy_datetime = datetime.strptime(buy_start_time, "%Y-%m-%d %H:%M")
+                        logger.info('商品%s预约抢购，开始时间:%s，结束时间:%s', sku_id, buy_start_time, buy_end_time)
+                    else:
+                        if resp_data:
+                            logger.info(f"响应数据：{resp_data}")
+                        logger.info("商品%s无法获取预约抢购时间，请重新设置sku_id", sku_id)
+                        exit(-1)
+                else:
+                    if resp_data:
+                        logger.info(f"响应数据：{resp_data}")
+                    logger.info("商品%s无法获取预约抢购时间，请重新设置sku_id", sku_id)
+                    exit(-1)
+            else:
+                logger.info("商品%s不是 预约抢购商品 或 未开始预约，请重新设置sku_id", sku_id)
+                exit(-1)
+        return int(time.mktime(server_buy_datetime.timetuple())), (
+                server_buy_datetime + timedelta(milliseconds=-config.buy_time_offset)).strftime(
+            "%Y-%m-%d %H:%M:%S.%f")
+
     def init_seckill_request_method(self, fast_mode, is_risk_control):
         # 提前初始化请求信息、方法
         # self.get_and_update_cookies_str()
         config = self.config
         sku_id = config.sku_id
-
-        # 初始化获取商品抢购链接请求方法
-        get_sku_seckill_url_request_headers = self.headers.copy()
 
         area_id = parse_area_id(self.area_id)
         cat = self.item_cat.get(sku_id)
@@ -1394,6 +1426,21 @@ class Assistant(object):
         vender_id = self.item_vender_ids.get(sku_id)
         param_json = self.param_json.get(sku_id)
         special_attrs = self.special_attrs.get(sku_id)
+
+        # 初始化预约抢购时间
+        server_buy_time, realy_buy_time = self.init_yuyue_buy_time(sku_id, self.headers.copy(), {
+            # 'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+            'skuId': sku_id,
+            'cat': cat,
+            'area': area_id,
+            'shopId': vender_id,
+            'venderId': vender_id,
+            'paramJson': param_json,
+            'num': 1,
+        })
+
+        # 初始化获取商品抢购链接请求方法
+        get_sku_seckill_url_request_headers = self.headers.copy()
 
         if fast_mode:
             get_sku_seckill_url_request_headers['Host'] = 'itemko.jd.com'
@@ -1771,6 +1818,7 @@ class Assistant(object):
                         time.sleep(retry_interval)
                 return False
         self.request_info['submit_seckill_order_request'] = submit_seckill_order_request
+        return server_buy_time, realy_buy_time
 
     @check_login
     def buy_item_in_stock(self, sku_ids, area, wait_all=False, stock_interval=3, submit_retry=3, submit_interval=5):
@@ -1838,11 +1886,42 @@ class Assistant(object):
 
         self.config = config
 
-        if config.buy_time is None:
-            exit(-1)
-
         # 开抢前清空购物车
         self.clear_cart()
+
+        sku_id = config.sku_id
+        area_id = parse_area_id(self.area_id)
+        cat = self.item_cat.get(sku_id)
+        retry_count = 0
+        while not cat:
+            retry_count += 1
+            logger.info('第 %s 次获取商品页信息', retry_count)
+            page = self._get_item_detail_page(sku_id)
+            if not self.parse_item_detail_page(sku_id, page):
+                if retry_count > 10:
+                    logger.error('无法获取cat，超出重试次数，抢购停止')
+                    exit(-1)
+                else:
+                    logger.error('第 %s 次获取商品页信息失败：%s', page)
+                    time.sleep(1)
+                    continue
+            else:
+                cat = self.item_cat.get(sku_id)
+        vender_id = self.item_vender_ids.get(sku_id)
+        param_json = self.param_json.get(sku_id)
+        # special_attrs = self.special_attrs.get(sku_id)
+
+        # [前置]初始化预约抢购时间
+        server_buy_time, realy_buy_time = self.init_yuyue_buy_time(sku_id, self.headers.copy(), {
+            # 'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+            'skuId': sku_id,
+            'cat': cat,
+            'area': area_id,
+            'shopId': vender_id,
+            'venderId': vender_id,
+            'paramJson': param_json,
+            'num': 1,
+        })
 
         # 1.初始化正常下单流程请求信息、方法
         self.init_default_order_request_method(config.fast_mode, config.is_risk_control)
@@ -1881,7 +1960,7 @@ class Assistant(object):
         # 2.倒计时
         logger.info('准备抢购商品id为：%s', config.sku_id)
 
-        Timer(buy_time=config.buy_time, sleep_interval=config.sleep_interval,
+        Timer(buy_time=realy_buy_time, sleep_interval=config.sleep_interval,
               fast_sleep_interval=config.fast_sleep_interval, is_sync=False, assistant=self).start()
 
         if self.config.fast_mode:

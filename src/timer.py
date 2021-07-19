@@ -51,11 +51,12 @@ class Timer(object):
         while True:
             now = self.now_time()
             if now > buy_time_timestamp:
+                # 超时后在主线程执行，不会启用并发
+                logger.info('时间超出，开始执行')
+                self.assistant.start_func()
+                return None
                 # 临时修改，默认开启并发
-                break
-                # logger.info('时间超出，开始执行')
-                # self.assistant.start_func()
-                # return None
+                # break
             else:
                 if now > fast_buy_time_timestamp:
                     if self.is_connected:

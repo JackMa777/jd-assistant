@@ -14,7 +14,7 @@ class Config(object):
             raise FileNotFoundError("No such file: config.ini")
         self._config = configparser.ConfigParser()
         self._config.read(self._path, encoding='utf-8')
-        select_mode = self._config.getint('mode', 'select_mode')
+        select_mode = self._config.getint('select_mode', 'select_mode')
         if not select_mode:
             select_mode = 1
         self.select_mode = select_mode
@@ -26,11 +26,6 @@ class Config(object):
             logger.error('请配置sku_id')
             exit(-1)
         self.sku_id = sku_id
-        buy_time = self.get('product', 'buy_time')
-        if not buy_time:
-            logger.error('请配置buy_time')
-            exit(-1)
-        self.buy_time = buy_time
 
         # 加载配置
         concurrent_count = self._config.getint('config', 'concurrent_count')
@@ -70,14 +65,25 @@ class Config(object):
         if select_mode == 1:
             sku_buy_time = self.get('mode', 'sku_buy_time')
             if not sku_buy_time:
-                logger.error('请配置sku_buy_time')
-                exit(-1)
+                sku_buy_time = None
             self.sku_buy_time = sku_buy_time
+            buy_time_offset = self._config.getint('mode', 'buy_time_offset')
+            if not buy_time_offset:
+                buy_time_offset = 0
+            self.buy_time_offset = buy_time_offset
             retry_interval = self._config.getfloat('mode', 'retry_interval')
             if not retry_interval:
                 retry_interval = 0.2
             self.retry_interval = retry_interval
         elif select_mode == 2:
+            sku_buy_time = self.get('mode', 'sku_buy_time')
+            if not sku_buy_time:
+                sku_buy_time = None
+            self.sku_buy_time = sku_buy_time
+            buy_time_offset = self._config.getint('mode', 'buy_time_offset')
+            if not buy_time_offset:
+                buy_time_offset = 0
+            self.buy_time_offset = buy_time_offset
             is_pass_cart = self.getboolean('mode', 'is_pass_cart')
             if not is_pass_cart:
                 is_pass_cart = False
