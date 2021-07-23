@@ -25,22 +25,27 @@ class CustomBrowser(object):
         else:
             self.client = webdriver.Chrome(chrome_options=chrome_options)
         client = self.client
-        # client.delete_all_cookies()
-        domain = '.jd.com'
-        url = f'https://www{domain}'
-        client.get(url)
-        for cookie in iter(cookies):
-            if domain in cookie.domain:
-                cookie_dict = {
-                    'name': cookie.name,
-                    'value': cookie.value,
-                    'path': cookie.path,
-                    'domain': cookie.domain,
-                    'secure': cookie.secure
-                }
-                if cookie.expires:
-                    cookie_dict['expiry'] = cookie.expires
-                client.add_cookie(cookie_dict)
+        try:
+            # client.delete_all_cookies()
+            domain = '.jd.com'
+            url = f'https://www{domain}'
+            client.get(url)
+            for cookie in iter(cookies):
+                if domain in cookie.domain:
+                    cookie_dict = {
+                        'name': cookie.name,
+                        'value': cookie.value,
+                        'path': cookie.path,
+                        'domain': cookie.domain,
+                        'secure': cookie.secure
+                    }
+                    if cookie.expires:
+                        cookie_dict['expiry'] = cookie.expires
+                    client.add_cookie(cookie_dict)
+        except Exception as e:
+            if client:
+                client.quit()
+            raise e
 
     def close(self):
         self.client.close()
