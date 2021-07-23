@@ -26,7 +26,7 @@ class Timer(object):
         # '2018-09-28 22:45:50.000'
         self.buy_time = datetime.strptime(buy_time, "%Y-%m-%d %H:%M:%S.%f")
         self.fast_buy_time = self.buy_time + timedelta(seconds=-3)
-        self.connect_time = self.buy_time + timedelta(seconds=-20)
+        self.connect_time = self.buy_time + timedelta(seconds=-45)
         self.sleep_interval = sleep_interval
         self.fast_sleep_interval = fast_sleep_interval
         self.buy_time_timestamp = self.buy_time.timestamp()
