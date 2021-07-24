@@ -7,6 +7,7 @@ import random
 import re
 import time
 from datetime import datetime, timedelta
+from urllib import parse
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,7 +19,6 @@ from exception import AsstException
 from log import logger
 from messenger import Messenger
 from socketclient import SocketClient, util
-from socketclient.utils import cookie_util
 from socketclient.utils import http_util
 from timer import Timer
 from util import (
@@ -69,6 +69,9 @@ class Assistant(object):
         self.track_id = global_config.get('config', 'track_id')
         self.risk_control = global_config.get('config', 'risk_control')
         self.area_id = None
+
+        self.item_zzz = dict()
+        self.item_url_param = dict()
 
         self.item_cat = dict()
         self.item_vender_ids = dict()  # 记录商家id
@@ -477,6 +480,15 @@ class Assistant(object):
             return resp_json.get('nickName') or 'jd'
         except Exception:
             return 'jd'
+
+    def new_get_item_detail_page(self, sku_id):
+        """访问商品详情页
+        :param sku_id: 商品id
+        :return: 响应
+        """
+        url = 'https://item.m.jd.com/product/{}.html'.format(sku_id)
+        page = requests.get(url=url, headers=self.headers)
+        return page
 
     def _get_item_detail_page(self, sku_id):
         """访问商品详情页
@@ -1254,57 +1266,75 @@ class Assistant(object):
 
         items_dict = parse_sku_id(sku_ids=config.sku_id)
 
-        # 1.提前初始化预约抢购流程请求信息、方法
-        server_buy_time, realy_buy_time = self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
-        # 兼容正常流程：初始化正常下单流程请求信息、方法
-        self.init_default_order_request_method(config.fast_mode, config.is_risk_control)
+        use_new = True
+
+        if use_new:
+            server_buy_time, realy_buy_time = self.new_init_seckill_request_method(config.fast_mode, config.is_risk_control)
+        else:
+            # 1.提前初始化预约抢购流程请求信息、方法
+            server_buy_time, realy_buy_time = self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
+            # 兼容正常流程：初始化正常下单流程请求信息、方法
+            self.init_default_order_request_method(config.fast_mode, config.is_risk_control)
 
         Timer.setSystemTime()
 
         # 使用多进程需要从倒计时前开始，后续流程都使用多进程执行
 
-        def start_func():
+        if use_new:
+            def start_func():
 
-            # 使用协程/多线程从执行开始
-            # 3.执行
-            for sku_id in items_dict:
-                logger.info('开始抢购商品:%s', sku_id)
+                # 订单请求页面
+                for sku_id in items_dict:
+                    logger.info('开始抢购商品:%s', sku_id)
 
-                # 获取抢购链接
-                resp = self.request_seckill_url(sku_id, server_buy_time)
-                if resp is not None:
-                    if resp == 'pass':
-                        pass
-                    elif resp.status == 302:
-                        location = resp.headers['location']
-                        logger.info('访问商品抢购链接请求，重定向地址：%s', location)
-                        if 'gate.action' in location:
-                            # 此处转入正常购物车下单流程
-                            add_cart_request = self.request_info['add_cart_request']
-                            payload = {
-                                'pid': sku_id,
-                                'pcount': config.num,
-                                'ptype': 1,
-                            }
-                            add_cart_request(payload)
-                            # 获取订单结算页面信息
-                            self.get_checkout_page_detail()
-                            retry = config.retry
-                            interval = config.interval
-                            for count in range(1, retry + 1):
-                                logger.info('第[%s/%s]次尝试提交订单', count, retry)
-                                with self.sem:
-                                    if self.submit_order():
-                                        break
-                                    logger.info('休息%ss', interval)
-                                    time.sleep(interval)
-                            else:
-                                logger.info('执行结束，提交订单失败！')
-                            continue
+                    seckill_url = self.request_info['get_confirm_order_page_request'](sku_id, server_buy_time)
+                    if seckill_url is not None:
+                        self.seckill_url[sku_id] = seckill_url
+                    else:
+                        return None
+        else:
+            def start_func():
 
-                # 开始抢购
-                self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]),
-                                  config.fast_mode)
+                # 使用协程/多线程从执行开始
+                # 3.执行
+                for sku_id in items_dict:
+                    logger.info('开始抢购商品:%s', sku_id)
+
+                    # 获取抢购链接
+                    resp = self.request_seckill_url(sku_id, server_buy_time)
+                    if resp is not None:
+                        if resp == 'pass':
+                            pass
+                        elif resp.status == 302:
+                            location = resp.headers['location']
+                            logger.info('访问商品抢购链接请求，重定向地址：%s', location)
+                            if 'gate.action' in location:
+                                # 此处转入正常购物车下单流程
+                                add_cart_request = self.request_info['add_cart_request']
+                                payload = {
+                                    'pid': sku_id,
+                                    'pcount': config.num,
+                                    'ptype': 1,
+                                }
+                                add_cart_request(payload)
+                                # 获取订单结算页面信息
+                                self.get_checkout_page_detail()
+                                retry = config.retry
+                                interval = config.interval
+                                for count in range(1, retry + 1):
+                                    logger.info('第[%s/%s]次尝试提交订单', count, retry)
+                                    with self.sem:
+                                        if self.submit_order():
+                                            break
+                                        logger.info('休息%ss', interval)
+                                        time.sleep(interval)
+                                else:
+                                    logger.info('执行结束，提交订单失败！')
+                                continue
+
+                    # 开始抢购
+                    self.exec_seckill(sku_id, server_buy_time, config.retry, config.interval, int(items_dict[sku_id]),
+                                      config.fast_mode)
 
         self.start_func = start_func
 
@@ -1316,6 +1346,26 @@ class Assistant(object):
 
         if self.config.fast_mode:
             self.close_now()
+
+    def new_parse_item_detail_page(self, sku_id, page):
+        match = re.search(r'"zzz":\"(.*)\"', page.text)
+        zzz = match.group(1)
+        if not zzz:
+            return False
+
+        self.item_zzz[sku_id] = zzz
+
+        area_id_list = list(map(lambda x: x.strip(), re.split('_|-', self.area_id)))
+
+        area_url = ''
+        if len(area_id_list) > 2:
+            area_url = area_id_list[0] + '-' + area_id_list[1] + '-' + area_id_list[2]
+
+        item_url_param = 'sceneval=2&bid=&scene=jd&isCanEdit=1&EncryptInfo=&Token=&type=0&lg=0&supm=0&locationid=' + area_url + '&favorablerate=94'
+
+        self.item_url_param[sku_id] = item_url_param
+
+        return True
 
     def parse_item_detail_page(self, sku_id, page):
         match = re.search(r'cat: \[(.*?)\]', page.text)
@@ -1818,6 +1868,121 @@ class Assistant(object):
                         time.sleep(retry_interval)
                 return False
         self.request_info['submit_seckill_order_request'] = submit_seckill_order_request
+        return server_buy_time, realy_buy_time
+
+    def new_init_seckill_request_method(self, fast_mode, is_risk_control):
+        # 提前初始化请求信息、方法
+        # self.get_and_update_cookies_str()
+        config = self.config
+        sku_id = config.sku_id
+
+        zzz = self.item_zzz.get(sku_id)
+        retry_count = 0
+        while not zzz:
+            retry_count += 1
+            logger.info('加载订单')
+            page = self.new_get_item_detail_page(sku_id)
+            if not self.new_parse_item_detail_page(sku_id, page):
+                if retry_count > 10:
+                    logger.error('无法获取zzz，超出重试次数，抢购停止')
+                    exit(-1)
+                else:
+                    logger.error('第 %s 次加载订单失败', retry_count)
+                    retry_count += 1
+                    time.sleep(1)
+                    continue
+            else:
+                zzz = self.item_zzz.get(sku_id)
+
+        area_id = parse_area_id(self.area_id)
+        cat = self.item_cat.get(sku_id)
+        retry_count = 0
+        while not cat:
+            retry_count += 1
+            logger.info('第 %s 次获取商品页信息', retry_count)
+            page = self._get_item_detail_page(sku_id)
+            if not self.parse_item_detail_page(sku_id, page):
+                if retry_count > 10:
+                    logger.error('无法获取cat，超出重试次数，抢购停止')
+                    exit(-1)
+                else:
+                    logger.error('第 %s 次获取商品页信息失败：%s', page)
+                    time.sleep(1)
+                    continue
+            else:
+                cat = self.item_cat.get(sku_id)
+        vender_id = self.item_vender_ids.get(sku_id)
+        param_json = self.param_json.get(sku_id)
+        special_attrs = self.special_attrs.get(sku_id)
+
+        # 初始化预约抢购时间
+        server_buy_time, realy_buy_time = self.init_yuyue_buy_time(sku_id, self.headers.copy(), {
+            # 'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+            'skuId': sku_id,
+            'cat': cat,
+            'area': area_id,
+            'shopId': vender_id,
+            'venderId': vender_id,
+            'paramJson': param_json,
+            'num': 1,
+        })
+
+        # 初始化加载订单请求方法
+        get_confirm_order_page_request_headers = self.headers.copy()
+        if fast_mode:
+            get_confirm_order_page_request_headers['Host'] = 'wq.jd.com'
+
+            def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
+                logger.info('加载订单页面请求')
+                jxsid = str(int(time.time() * 1000)) + str(random.random())[2:7]
+                url = 'https://wq.jd.com/deal/confirmorder/main?jxsid=' + jxsid
+                referer_url = f'https://item.m.jd.com/product/{sku_id}.html?sceneval=2&jxsid={jxsid}'
+                params = f'{self.item_url_param.get(sku_id)}&commlist={sku_id},,1,{sku_id},1,0,0' \
+                         f'&wdref={parse.quote(referer_url, safe="")}'
+                get_confirm_order_page_request_headers['Referer'] = referer_url
+
+                self.sess.cookies.set('_modc', zzz)
+
+                retry_interval = config.retry_interval
+                retry_count = 0
+                while True:
+                    if retry_count >= 10:
+                        logger.error("加载订单页面请求失败，终止抢购！")
+                        exit(-1)
+                    try:
+                        resp = http_util.send_http_request(self.socket_client,
+                                                           url=url,
+                                                           method='GET',
+                                                           headers=get_confirm_order_page_request_headers,
+                                                           params=params
+                                                           , cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'))
+                        resp_data = resp.body
+                        resp_json = parse_json(resp_data)
+                        if resp_json.get('url'):
+                            # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                            router_url = 'https:' + resp_json.get('url')
+                            # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
+                            seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
+                                                                                           'captcha.html')
+                            logger.info("抢购链接获取成功: %s", seckill_url)
+                            return seckill_url
+                        else:
+                            retry_count += 1
+                            if resp_data:
+                                logger.info(f"响应数据：{resp_data}")
+                            logger.info("商品%s第%s次加载订单页面请求失败，链接为空，%s秒后重试", sku_id, retry_count, retry_interval)
+                            time.sleep(retry_interval)
+                    except Exception as e:
+                        retry_count += 1
+                        logger.error("异常信息：%s", e)
+                        logger.info("商品%s第%s次加载订单页面请求失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                        time.sleep(retry_interval)
+
+        else:
+            def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
+                exit(-1)
+        self.request_info['get_confirm_order_page_request'] = get_confirm_order_page_request
+
         return server_buy_time, realy_buy_time
 
     @check_login
@@ -2365,12 +2530,29 @@ class Assistant(object):
 
     def get_cookies_str_by_domain_or_path(self, domain=None, path=None):
         cookie_array = []
-        for cookie in iter(self.sess.cookies):
-            if (
-                    (domain is None or cookie.domain in domain) and
-                    (path is None or cookie.path == path)
-            ):
-                cookie_array.append(f'{cookie.name}={cookie.value};')
+        if domain is None:
+            if path is None:
+                for cookie in iter(self.sess.cookies):
+                    cookie_array.append(f'{cookie.name}={cookie.value};')
+            else:
+                for cookie in iter(self.sess.cookies):
+                    if cookie.path == path:
+                        cookie_array.append(f'{cookie.name}={cookie.value};')
+        elif path is None:
+            if domain is None:
+                for cookie in iter(self.sess.cookies):
+                    cookie_array.append(f'{cookie.name}={cookie.value};')
+            else:
+                for cookie in iter(self.sess.cookies):
+                    if cookie.domain in domain:
+                        cookie_array.append(f'{cookie.name}={cookie.value};')
+        else:
+            for cookie in iter(self.sess.cookies):
+                if (
+                        (cookie.domain in domain) and
+                        (cookie.path == path)
+                ):
+                    cookie_array.append(f'{cookie.name}={cookie.value};')
         return ''.join(cookie_array)
 
     def start_by_config(self, config=global_config):
