@@ -37,7 +37,10 @@ def mark_http_req_byte(url, method='GET', params=None, data=None, headers=None, 
     host, port, uri = get_host_and_port(url, True)
     uri_list = ['/', uri]
     if params:
-        uri_list.append('?')
+        if '?' not in uri:
+            uri_list.append('?')
+        else:
+            uri_list.append('&')
         if isinstance(params, dict):
             params_list = []
             for key, value in params.items():
