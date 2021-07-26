@@ -63,6 +63,8 @@ class Assistant(object):
         self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
         self.headers = {'User-Agent': self.user_agent}
 
+        self.br = None
+
         # 用户相关
         self.eid = global_config.get('config', 'eid')
         self.fp = global_config.get('config', 'fp')
@@ -103,6 +105,32 @@ class Assistant(object):
         if self.is_login:
             self.nick_name = self.get_user_info()
             self._save_cookies()
+
+    def init_browser(self):
+        br = self.br = CustomBrowser.CustomBrowser(self.user_agent, self.chromedriver_path, self.chrome_path)
+        count = 0
+        # 启动浏览器
+        while True:
+            try:
+                domain = '.jd.com'
+                url = f'https://www{domain}'
+                br.openUrl(url)
+                br.set_cookies(self.sess.cookies, domain)
+            except Exception as e:
+                logger.error(e)
+                logger.error(f'无法初始化浏览器cookies，'
+                             f'请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
+                if count > 3:
+                    if br:
+                        br.quit()
+                    logger.error('初始化浏览器cookies失败！'
+                                 '请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败！')
+                    exit(-1)
+            else:
+                break
+            count += 1
+            logger.info('初始化下单参数失败！开始第 %s 次重试', count)
+        return br
 
     @property
     def seckill_url(self):
@@ -2002,48 +2030,37 @@ class Assistant(object):
                                         'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
                                         jsCallback)
 
-        br = None
+        br = self.init_browser()
+
+        # headers = {
+        #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        #     'accept-encoding': 'gzip, deflate, br',
+        #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        #     'cache-control': 'max-age=0',
+        #     'dnt': '1',
+        #     'sec-fetch-dest': 'document',
+        #     'sec-fetch-mode': 'navigate',
+        #     'sec-fetch-site': 'none',
+        #     'sec-fetch-user': '?1',
+        #     'upgrade-insecure-requests': '1',
+        # }
+
         count = 0
-
         while True:
-            # 启动浏览器
-            try:
-                if not br:
-                    br = CustomBrowser.CustomBrowser(self.sess.cookies, self.user_agent, self.chromedriver_path,
-                                                     self.chrome_path)
-
-                # headers = {
-                #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-                #     'accept-encoding': 'gzip, deflate, br',
-                #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                #     'cache-control': 'max-age=0',
-                #     'dnt': '1',
-                #     'sec-fetch-dest': 'document',
-                #     'sec-fetch-mode': 'navigate',
-                #     'sec-fetch-site': 'none',
-                #     'sec-fetch-user': '?1',
-                #     'upgrade-insecure-requests': '1',
-                # }
-
-                if br.openUrl('https://order.jd.com/center/list.action', jsFunc):
+            if br.openUrl('https://order.jd.com/center/list.action', jsFunc):
+                if not self.eid or not self.fp or not self.track_id:
+                    if count > 3:
+                        logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+                        exit(-1)
+                else:
                     break
-
-            except Exception as e:
-                if br:
-                    br.quit()
-                logger.error(e)
-                logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
-                logger.info(
-                    'chromedriver可在 http://npm.taobao.org/mirrors/chromedriver/ 下载，注意下载与chrome对应的版本，复制文件路径到chromedriver_path即可')
-                logger.info('chrome需自行下载，安装版无需配置，精简版复制chrome可执行文件路径到chrome_path即可')
-
-            if not self.eid or not self.fp or not self.track_id:
+            else:
                 if count > 3:
                     logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
                     exit(-1)
-                else:
-                    count += 1
-                    logger.info('初始化下单参数失败！开始第 %s 次重试', count)
+            count += 1
+            logger.info('初始化下单参数失败！开始第 %s 次重试', count)
+
         if br:
             # 关闭浏览器
             br.quit()
