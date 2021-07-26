@@ -1,13 +1,15 @@
 import os
-import time
+from http.cookiejar import CookieJar
 from inspect import isfunction
 
 from selenium import webdriver
 
+from log import logger
+
 
 class CustomBrowser(object):
 
-    def __init__(self, cookies, user_agent, chromedriver_path=None, chrome_path=None):
+    def __init__(self, user_agent, chromedriver_path=None, chrome_path=None):
 
         chrome_options = webdriver.ChromeOptions()
         chrome_options.headless = True
@@ -20,16 +22,35 @@ class CustomBrowser(object):
         chrome_options.add_experimental_option("excludeSwitches", ['enable-automation', 'enable-logging'])
         if chrome_path:
             chrome_options.binary_location = chrome_path
-        if chromedriver_path:
-            self.client = webdriver.Chrome(executable_path=chromedriver_path, chrome_options=chrome_options)
-        else:
-            self.client = webdriver.Chrome(chrome_options=chrome_options)
-        client = self.client
-        try:
+        count = 0
+        client = None
+        while True:
+            try:
+                if chromedriver_path:
+                    self.client = webdriver.Chrome(executable_path=chromedriver_path, chrome_options=chrome_options)
+                else:
+                    self.client = webdriver.Chrome(chrome_options=chrome_options)
+                client = self.client
+            # try:
             # client.delete_all_cookies()
-            domain = '.jd.com'
-            url = f'https://www{domain}'
-            client.get(url)
+            except Exception as e:
+                count += 1
+                if client:
+                    client.quit()
+                logger.error(e)
+                logger.error(f'无法初始化浏览器，请检查config.ini文件中chromedriver_path与chrome_path的配置 或 检查网络代理是否关闭，开启代理会导致浏览器初始化失败')
+                logger.info(
+                    'chromedriver可在 http://npm.taobao.org/mirrors/chromedriver/ '
+                    '下载，注意下载与chrome对应的版本，复制文件路径到chromedriver_path即可')
+                logger.info('chrome需自行下载，安装版无需配置，精简版复制chrome可执行文件路径到chrome_path即可')
+                if count > 3:
+                    raise e
+                continue
+            else:
+                break
+
+    def set_cookies(self, cookies: CookieJar, domain):
+        if cookies:
             for cookie in iter(cookies):
                 if domain in cookie.domain:
                     cookie_dict = {
@@ -41,11 +62,7 @@ class CustomBrowser(object):
                     }
                     if cookie.expires:
                         cookie_dict['expiry'] = cookie.expires
-                    client.add_cookie(cookie_dict)
-        except Exception as e:
-            if client:
-                client.quit()
-            raise e
+                    self.client.add_cookie(cookie_dict)
 
     def close(self):
         self.client.close()
