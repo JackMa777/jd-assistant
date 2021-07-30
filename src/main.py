@@ -10,8 +10,11 @@ if __name__ == '__main__':
     chromedriver下载：https://sites.google.com/a/chromium.org/chromedriver/home
     """
 
-    asst = Assistant()  # 初始化
-    asst.login_by_QRcode()  # 扫码登陆
+    asst = Assistant(True)  # 初始化
+    if asst.use_new:
+        asst.login_by_browser()
+    else:
+        asst.login_by_QRcode()  # 扫码登陆
 
     asst.start_by_config()
 

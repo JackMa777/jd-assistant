@@ -37,13 +37,13 @@ from util import (
     parse_items_dict,
     response_status,
     save_image,
-    split_area_id
+    split_area_id, DEFAULT_M_USER_AGENT
 )
 
 
 class Assistant(object):
 
-    def __init__(self):
+    def __init__(self, use_new=False):
         self.config = None
         self.backend_mod = util.load_backend('gevent')
         self.sem = self.backend_mod.Semaphore(1)
@@ -60,10 +60,16 @@ class Assistant(object):
         self.send_message = global_config.getboolean('messenger', 'enable')
         self.messenger = Messenger(global_config.get('messenger', 'sckey')) if self.send_message else None
         use_random_ua = global_config.getboolean('config', 'random_useragent')
-        self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
-        self.headers = {'User-Agent': self.user_agent}
 
+        if use_new:
+            self.user_agent = DEFAULT_M_USER_AGENT
+        elif not use_random_ua:
+            self.user_agent = DEFAULT_USER_AGENT
+        else:
+            self.user_agent = get_random_useragent()
+        self.use_new = use_new
         self.br = None
+        self.headers = {'User-Agent': self.user_agent}
 
         # 用户相关
         self.eid = global_config.get('config', 'eid')
@@ -104,21 +110,19 @@ class Assistant(object):
             self._load_cookies()
         except Exception:
             pass
-        # 已登陆则刷新cookies
+
+        # 已登录则刷新cookies
         if self.is_login:
             self.nick_name = self.get_user_info()
             self._save_cookies()
 
-    def init_browser(self):
-        br = self.br = CustomBrowser.CustomBrowser(self.user_agent, self.chromedriver_path, self.chrome_path)
+    def init_browser(self, headless=True):
+        br = self.br = CustomBrowser.CustomBrowser(self.user_agent, self.chromedriver_path, self.chrome_path, headless)
         count = 0
         # 启动浏览器
         while True:
             try:
-                domain = '.jd.com'
-                url = f'https://www{domain}'
-                br.openUrl(url)
-                br.set_cookies(self.sess.cookies, domain)
+                br.openUrl('chrome://version/')
             except Exception as e:
                 logger.error(e)
                 logger.error(f'无法初始化浏览器cookies，'
@@ -187,22 +191,54 @@ class Assistant(object):
         通过访问用户订单列表页进行判断：若未登录，将会重定向到登陆页面。
         :return: cookies是否有效 True/False
         """
-        url = 'https://order.jd.com/center/list.action'
-        # payload = {
-        #     'rid': str(int(time.time() * 1000)),
-        # }
-        try:
-            resp = self.sess.get(url=url,
-                                 headers={'dnt': '1', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate',
-                                          'sec-fetch-site': 'none', 'upgrade-insecure-requests': '1',
-                                          'user-agent': self.user_agent}, allow_redirects=False)
-            if resp.status_code == requests.codes.OK:
-                return True
-        except Exception as e:
-            logger.error(e)
 
-        self.sess = requests.session()
-        return False
+        if self.use_new:
+            url = 'https://wq.jd.com/user/info/GetUserAllPinInfo'
+            # url = 'https://home.m.jd.com/myJd/home.action'
+            # url = 'https://home.m.jd.com/userinfom/QueryUserInfoM'
+            params = {
+                'sceneval': 2,
+                'g_login_type': 1,
+                'callback': 'userInfoCallBack',
+                'g_ty': 'ls',
+                '_': str(int(time.time() * 1000))
+            }
+            try:
+                resp = self.sess.get(url=url, params=params,
+                                     headers={'dnt': '1', 'referer': 'https://wqs.jd.com/', 'sec-fetch-dest': 'script',
+                                              'sec-fetch-mode': 'no-cors', 'sec-fetch-site': 'same-site',
+                                              'user-agent': self.user_agent}, allow_redirects=False)
+                if resp.status_code == requests.codes.OK:
+                    html = resp.text
+                    if html and 'pin' in html:
+                        match = re.search(r'^try\{userInfoCallBack\((.*)\);\}catch\(e\)\{\}$', html)
+                        json_str = match.group(1)
+                        if json_str:
+                            json_dict = json.loads(json_str)
+                            self.nick_name = json_dict['userdata']['renderJDDate'][0]['msg']['nickname']
+                            return True
+            except Exception as e:
+                logger.error(e)
+
+            self.sess = requests.session()
+            return False
+        else:
+            url = 'https://order.jd.com/center/list.action'
+            # payload = {
+            #     'rid': str(int(time.time() * 1000)),
+            # }
+            try:
+                resp = self.sess.get(url=url,
+                                     headers={'dnt': '1', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate',
+                                              'sec-fetch-site': 'none', 'upgrade-insecure-requests': '1',
+                                              'user-agent': self.user_agent}, allow_redirects=False)
+                if resp.status_code == requests.codes.OK:
+                    return True
+            except Exception as e:
+                logger.error(e)
+
+            self.sess = requests.session()
+            return False
 
     @deprecated
     def _need_auth_code(self, username):
@@ -418,6 +454,11 @@ class Assistant(object):
         """二维码登陆
         :return:
         """
+        br = self.init_browser()
+        domain = '.jd.com'
+        br.openUrl(f'https://www{domain}')
+        br.set_cookies(self.sess.cookies, domain)
+
         if self.is_login:
             logger.info('登录成功')
         else:
@@ -447,6 +488,50 @@ class Assistant(object):
             self.nick_name = self.get_user_info()
             self._save_cookies()
 
+        # 获取下单必须参数
+        self.init_order_request_info()
+
+    def login_by_browser(self):
+        """浏览器登录
+        :return:
+        """
+        br = self.init_browser(False)
+        domain = '.m.jd.com'
+        br.openUrl(f'https://plogin{domain}/login/login')
+        # br.openUrl(f'https://passport{domain}/new/login.aspx')
+        br.set_cookies(self.sess.cookies, domain)
+
+        if self.is_login:
+            logger.info('登录成功')
+        else:
+            retry_times = 600
+            for _ in range(retry_times):
+                pt_key = br.client.get_cookie('pt_key')
+                if pt_key:
+                    break
+                time.sleep(2)
+            else:
+                br.quit()
+                raise AsstException('登录时间过长，请重新启动')
+
+            cookies = br.client.get_cookies()
+            for cookie in cookies:
+                if 'expiry' in cookie:
+                    expires = cookie['expiry']
+                else:
+                    expires = None
+                self.sess.cookies.set(cookie['name'], cookie['value']
+                                      , domain=cookie['domain'], secure=cookie['secure'], expires=expires)
+
+            if not self._validate_cookies():
+                raise AsstException('浏览器登录校验失败')
+
+            logger.info('浏览器登录成功')
+            self.is_login = True
+            self.nick_name = self.get_user_info()
+            self._save_cookies()
+
+        # TODO 修改逻辑
         # 获取下单必须参数
         self.init_order_request_info()
 
@@ -491,23 +576,26 @@ class Assistant(object):
         """获取用户信息
         :return: 用户名
         """
-        url = 'https://passport.jd.com/user/petName/getUserInfoForMiniJd.action'
-        payload = {
-            'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
-            '_': str(int(time.time() * 1000)),
-        }
-        headers = {
-            'User-Agent': self.user_agent,
-            'Referer': 'https://order.jd.com/center/list.action',
-        }
-        try:
-            resp = self.sess.get(url=url, params=payload, headers=headers)
-            resp_json = parse_json(resp.text)
-            # many user info are included in response, now return nick name in it
-            # jQuery2381773({"imgUrl":"//storage.360buyimg.com/i.imageUpload/xxx.jpg","lastLoginTime":"","nickName":"xxx","plusStatus":"0","realName":"xxx","userLevel":x,"userScoreVO":{"accountScore":xx,"activityScore":xx,"consumptionScore":xxxxx,"default":false,"financeScore":xxx,"pin":"xxx","riskScore":x,"totalScore":xxxxx}})
-            return resp_json.get('nickName') or 'jd'
-        except Exception:
-            return 'jd'
+        if self.use_new:
+            return self.nick_name
+        else:
+            url = 'https://passport.jd.com/user/petName/getUserInfoForMiniJd.action'
+            payload = {
+                'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
+                '_': str(int(time.time() * 1000)),
+            }
+            headers = {
+                'User-Agent': self.user_agent,
+                'Referer': 'https://order.jd.com/center/list.action',
+            }
+            try:
+                resp = self.sess.get(url=url, params=payload, headers=headers)
+                resp_json = parse_json(resp.text)
+                # many user info are included in response, now return nick name in it
+                # jQuery2381773({"imgUrl":"//storage.360buyimg.com/i.imageUpload/xxx.jpg","lastLoginTime":"","nickName":"xxx","plusStatus":"0","realName":"xxx","userLevel":x,"userScoreVO":{"accountScore":xx,"activityScore":xx,"consumptionScore":xxxxx,"default":false,"financeScore":xxx,"pin":"xxx","riskScore":x,"totalScore":xxxxx}})
+                return resp_json.get('nickName') or 'jd'
+            except Exception:
+                return 'jd'
 
     def new_get_item_detail_page(self, sku_id):
         """访问商品详情页
@@ -1294,10 +1382,9 @@ class Assistant(object):
 
         items_dict = parse_sku_id(sku_ids=config.sku_id)
 
-        use_new = True
-
-        if use_new:
-            server_buy_time, realy_buy_time = self.new_init_seckill_request_method(config.fast_mode, config.is_risk_control)
+        if self.use_new:
+            server_buy_time, realy_buy_time = self.new_init_seckill_request_method(config.fast_mode,
+                                                                                   config.is_risk_control)
         else:
             # 1.提前初始化预约抢购流程请求信息、方法
             server_buy_time, realy_buy_time = self.init_seckill_request_method(config.fast_mode, config.is_risk_control)
@@ -1308,7 +1395,7 @@ class Assistant(object):
 
         # 使用多进程需要从倒计时前开始，后续流程都使用多进程执行
 
-        if use_new:
+        if self.use_new:
             def start_func():
 
                 # 订单请求页面
@@ -1983,7 +2070,8 @@ class Assistant(object):
                                                            method='GET',
                                                            headers=get_confirm_order_page_request_headers,
                                                            params=params
-                                                           , cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'))
+                                                           ,
+                                                           cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'))
                         resp_data = resp.body
                         resp_json = parse_json(resp_data)
                         if resp_json.get('url'):
@@ -2195,7 +2283,7 @@ class Assistant(object):
                                         'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
                                         jsCallback)
 
-        br = self.init_browser()
+        br = self.br
 
         # headers = {
         #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',

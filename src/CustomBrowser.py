@@ -9,13 +9,14 @@ from log import logger
 
 class CustomBrowser(object):
 
-    def __init__(self, user_agent, chromedriver_path=None, chrome_path=None):
+    def __init__(self, user_agent, chromedriver_path=None, chrome_path=None, headless=True):
 
         chrome_options = webdriver.ChromeOptions()
-        chrome_options.headless = True
+        chrome_options.headless = headless
         chrome_options.add_argument('--no-sandbox')
         # chrome_options.add_argument('--no-proxy-server')
         # chrome_options.add_argument('--proxy-server=127.0.0.1:8080')
+        # chrome_options.add_argument('--proxy-pac-url')
         chrome_options.add_argument(f'user-agent="{user_agent}"')
         chrome_options.add_argument(f'--user-data-dir={os.path.dirname(os.getcwd())}/Browser/Data')
         chrome_options.add_argument(f'-–disk-cache-dir={os.path.dirname(os.getcwd())}/Browser/Cache')
