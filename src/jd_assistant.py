@@ -496,8 +496,10 @@ class Assistant(object):
         :return:
         """
         br = self.init_browser(False)
+        br.client.set_window_size(375, 812)
         domain = '.m.jd.com'
-        br.openUrl(f'https://plogin{domain}/login/login')
+        # br.openUrl(f'https://plogin{domain}/login/login')
+        br.openUrl(f'https://m.jd.com/')
         # br.openUrl(f'https://passport{domain}/new/login.aspx')
         br.set_cookies(self.sess.cookies, domain)
 
@@ -1405,6 +1407,7 @@ class Assistant(object):
                     seckill_url = self.request_info['get_confirm_order_page_request'](sku_id, server_buy_time)
                     if seckill_url is not None:
                         self.seckill_url[sku_id] = seckill_url
+                        # TODO 下单请求
                     else:
                         return None
         else:
@@ -2073,6 +2076,7 @@ class Assistant(object):
                                                            ,
                                                            cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'))
                         resp_data = resp.body
+                        # TODO 修改逻辑
                         resp_json = parse_json(resp_data)
                         if resp_json.get('url'):
                             # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
@@ -2251,69 +2255,111 @@ class Assistant(object):
     def init_order_request_info(self):
         # 获取下单必须参数
 
-        # 获取：ipLoc-djd、ipLocation
-        if address_util.get_user_address(self) is not True:
-            logger.error('获取地址信息失败，请重试！')
-            exit(-1)
-
-        # 获取：eid、fp、track_id、risk_control（默认为空）
-
-        def jsCallback(data):
-            # print(data)
-            eid = data['eid']
-            fp = data['fp']
-            track_id = data['trackId']
-            if eid:
-                self.eid = eid
-            if fp:
-                self.fp = fp
-            if track_id:
-                self.track_id = track_id
-            if eid and fp and track_id:
-                logger.info('自动初始化下单参数成功！')
-                return True
-            return False
-
-        jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
-                                        'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
-                                        'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
-                                        'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<20;count++){'
-                                        'try{getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
-                                        'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
-                                        'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
-                                        jsCallback)
-
         br = self.br
 
-        # headers = {
-        #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-        #     'accept-encoding': 'gzip, deflate, br',
-        #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        #     'cache-control': 'max-age=0',
-        #     'dnt': '1',
-        #     'sec-fetch-dest': 'document',
-        #     'sec-fetch-mode': 'navigate',
-        #     'sec-fetch-site': 'none',
-        #     'sec-fetch-user': '?1',
-        #     'upgrade-insecure-requests': '1',
-        # }
+        if self.use_new:
+            # 获取：eid、fp、jstub、token、sdkToken（默认为空）
+            pass
 
-        count = 0
-        while True:
-            if br.openUrl('https://order.jd.com/center/list.action', jsFunc):
-                if not self.eid or not self.fp or not self.track_id:
+            # def jsCallback(data):
+            #     # print(data)
+            #     eid = data['eid']
+            #     fp = data['fp']
+            #     track_id = data['trackId']
+            #     if eid:
+            #         self.eid = eid
+            #     if fp:
+            #         self.fp = fp
+            #     if track_id:
+            #         self.track_id = track_id
+            #     if eid and fp and track_id:
+            #         logger.info('自动初始化下单参数成功！')
+            #         return True
+            #     return False
+            #
+            # jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
+            #                                 'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
+            #                                 'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
+            #                                 'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<20;count++){'
+            #                                 'try{getJdEid()}catch(e){count++;sleep(500)}};return obj})()',
+            #                                 jsCallback)
+            #
+            # count = 0
+            # while True:
+            #     if br.openUrl('https://idt.jd.com/paypwd/toUpdateOrForget/', jsFunc):
+            #         if not self.eid or not self.fp or not self.track_id:
+            #             if count > 3:
+            #                 logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            #                 exit(-1)
+            #         else:
+            #             break
+            #     else:
+            #         if count > 3:
+            #             logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+            #             exit(-1)
+            #     count += 1
+            #     logger.info('初始化下单参数失败！开始第 %s 次重试', count)
+        else:
+            # 获取：ipLoc-djd、ipLocation
+            if address_util.get_user_address(self) is not True:
+                logger.error('获取地址信息失败，请重试！')
+                exit(-1)
+
+            # 获取：eid、fp、track_id、risk_control（默认为空）
+
+            def jsCallback(data):
+                # print(data)
+                eid = data['eid']
+                fp = data['fp']
+                track_id = data['trackId']
+                if eid:
+                    self.eid = eid
+                if fp:
+                    self.fp = fp
+                if track_id:
+                    self.track_id = track_id
+                if eid and fp and track_id:
+                    logger.info('自动初始化下单参数成功！')
+                    return True
+                return False
+
+            jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
+                                            'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
+                                            'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
+                                            'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<20;count++){'
+                                            'try{getJdEid(function(eid, fp, udfp){var trackId=getCookie("TrackID");'
+                                            'if(eid&&fp&&trackId){obj.eid=eid;obj.fp=fp;obj.trackId=trackId;return obj;}'
+                                            'else{count++;sleep(500)}})}catch(e){count++;sleep(500)}};return obj})()',
+                                            jsCallback)
+
+            # headers = {
+            #     # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            #     'accept-encoding': 'gzip, deflate, br',
+            #     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            #     'cache-control': 'max-age=0',
+            #     'dnt': '1',
+            #     'sec-fetch-dest': 'document',
+            #     'sec-fetch-mode': 'navigate',
+            #     'sec-fetch-site': 'none',
+            #     'sec-fetch-user': '?1',
+            #     'upgrade-insecure-requests': '1',
+            # }
+
+            count = 0
+            while True:
+                if br.openUrl('https://order.jd.com/center/list.action', jsFunc):
+                    if not self.eid or not self.fp or not self.track_id:
+                        if count > 3:
+                            logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+                            exit(-1)
+                    else:
+                        break
+                else:
                     if count > 3:
                         logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
                         exit(-1)
-                else:
-                    break
-            else:
-                if count > 3:
-                    logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
-                    exit(-1)
-            count += 1
-            logger.info('初始化下单参数失败！开始第 %s 次重试', count)
-
+                count += 1
+                logger.info('初始化下单参数失败！开始第 %s 次重试', count)
         if br:
             # 关闭浏览器
             br.quit()
