@@ -2259,46 +2259,43 @@ class Assistant(object):
 
         if self.use_new:
             # 获取：eid、fp、jstub、token、sdkToken（默认为空）
-            pass
+            # pass
 
-            # def jsCallback(data):
-            #     # print(data)
-            #     eid = data['eid']
-            #     fp = data['fp']
-            #     track_id = data['trackId']
-            #     if eid:
-            #         self.eid = eid
-            #     if fp:
-            #         self.fp = fp
-            #     if track_id:
-            #         self.track_id = track_id
-            #     if eid and fp and track_id:
-            #         logger.info('自动初始化下单参数成功！')
-            #         return True
-            #     return False
-            #
-            # jsFunc = CustomBrowser.JsScript('return (function(){var getCookie=function(name){'
-            #                                 'var arr,reg=new RegExp("(^| )"+name+"=([^;]*)(;|$)");'
-            #                                 'if(arr=document.cookie.match(reg)){return unescape(arr[2]);}else{return '
-            #                                 'null;}},obj={eid:"",fp:"",trackId:""};for(var count=0;count<20;count++){'
-            #                                 'try{getJdEid()}catch(e){count++;sleep(500)}};return obj})()',
-            #                                 jsCallback)
-            #
-            # count = 0
-            # while True:
-            #     if br.openUrl('https://idt.jd.com/paypwd/toUpdateOrForget/', jsFunc):
-            #         if not self.eid or not self.fp or not self.track_id:
-            #             if count > 3:
-            #                 logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
-            #                 exit(-1)
-            #         else:
-            #             break
-            #     else:
-            #         if count > 3:
-            #             logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
-            #             exit(-1)
-            #     count += 1
-            #     logger.info('初始化下单参数失败！开始第 %s 次重试', count)
+            def jsCallback(data):
+                # print(data)
+                eid = data['eid']
+                fp = data['fp']
+                track_id = data['trackId']
+                if eid:
+                    self.eid = eid
+                if fp:
+                    self.fp = fp
+                if track_id:
+                    self.track_id = track_id
+                if eid and fp and track_id:
+                    logger.info('自动初始化下单参数成功！')
+                    return True
+                return False
+
+            jsFunc = CustomBrowser.JsScript('return (function(){var obj={};for(var count=0;count<20;count++){'
+                                            'try{obj=getJdEid()}catch(e){count++;sleep(500)}};return obj})()',
+                                            jsCallback)
+
+            count = 0
+            while True:
+                if br.openUrl('https://idt.jd.com/paypwd/toUpdateOrForget/', jsFunc):
+                    if not self.eid or not self.fp or not self.track_id:
+                        if count > 3:
+                            logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+                            exit(-1)
+                    else:
+                        break
+                else:
+                    if count > 3:
+                        logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+                        exit(-1)
+                count += 1
+                logger.info('初始化下单参数失败！开始第 %s 次重试', count)
         else:
             # 获取：ipLoc-djd、ipLocation
             if address_util.get_user_address(self) is not True:
