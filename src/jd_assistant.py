@@ -20,6 +20,7 @@ from log import logger
 from messenger import Messenger
 from socketclient import SocketClient, util
 from socketclient.utils import http_util
+from socketclient.utils.http import cookie_util
 from timer import Timer
 from util import (
     DEFAULT_TIMEOUT,
@@ -98,6 +99,9 @@ class Assistant(object):
         self.item_requests.append(dict())
         self.item_requests.append(dict())
         self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
+        self.item_requests.append(dict())
 
         self.username = ''
         self.nick_name = ''
@@ -166,6 +170,18 @@ class Assistant(object):
     @property
     def is_get_checkout_page(self):
         return self.item_requests[6]
+
+    @property
+    def get_submit_page_data(self):
+        return self.item_requests[7]
+
+    @property
+    def get_promiseUuid(self):
+        return self.item_requests[8]
+
+    @property
+    def get_submit_data(self):
+        return self.item_requests[9]
 
     def _load_cookies(self):
         cookies_file = ''
@@ -1395,19 +1411,31 @@ class Assistant(object):
 
         Timer.setSystemTime()
 
-        # 使用多进程需要从倒计时前开始，后续流程都使用多进程执行
+        # 使用多线程需要从倒计时前开始，后续流程都使用多线程执行
 
         if self.use_new:
+            get_confirm_order_page_request = self.request_info['get_confirm_order_page_request']
+            submit_order_request = self.request_info['submit_order_request']
             def start_func():
 
                 # 订单请求页面
                 for sku_id in items_dict:
                     logger.info('开始抢购商品:%s', sku_id)
-
-                    seckill_url = self.request_info['get_confirm_order_page_request'](sku_id, server_buy_time)
-                    if seckill_url is not None:
-                        self.seckill_url[sku_id] = seckill_url
-                        # TODO 下单请求
+                    submit_data = get_confirm_order_page_request(sku_id, server_buy_time)
+                    if submit_data is not None:
+                        retry = config.retry
+                        interval = config.interval
+                        for count in range(1, retry + 1):
+                            logger.info('第[%s/%s]次尝试提交订单', count, retry)
+                            with self.sem:
+                                # 下单请求
+                                if submit_order_request(submit_data):
+                                    break
+                                logger.info('休息%ss', interval)
+                                time.sleep(interval)
+                        else:
+                            logger.info('执行结束，提交订单失败！')
+                        continue
                     else:
                         return None
         else:
@@ -2046,24 +2074,46 @@ class Assistant(object):
         })
 
         # 初始化加载订单请求方法
-        get_confirm_order_page_request_headers = self.headers.copy()
         if fast_mode:
+            get_confirm_order_page_request_headers = self.headers.copy()
             get_confirm_order_page_request_headers['Host'] = 'wq.jd.com'
+
+            get_confirm_order_promise_uuid_headers = self.headers.copy()
+
+            get_confirm_order_headers = self.headers.copy()
+
+            letterMap = ["Z", "A", "B", "C", "D", "E", "F", "G", "H", "I"]
+
+            def parsing_submit_page_data(html):
+                # TODO 从页面获取：token2、skulist、venderId、mli.promotion.discountPrice、mainSku.cid切割“_”取[2]、sucPageType、traceId
+                data = dict()
+
+                return data
+
+            def parse_promise_uuid(string):
+                # TODO 解析响应数据，提取promise_uuid
+                promise_uuid = ""
+
+                return promise_uuid
 
             def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
                 logger.info('加载订单页面请求')
                 jxsid = str(int(time.time() * 1000)) + str(random.random())[2:7]
                 url = 'https://wq.jd.com/deal/confirmorder/main?jxsid=' + jxsid
                 referer_url = f'https://item.m.jd.com/product/{sku_id}.html?sceneval=2&jxsid={jxsid}'
-                params = f'{self.item_url_param.get(sku_id)}&commlist={sku_id},,1,{sku_id},1,0,0' \
-                         f'&wdref={parse.quote(referer_url, safe="")}'
+                confirm_order_page_params = f'{self.item_url_param.get(sku_id)}&commlist={sku_id},,1,{sku_id},1,0,0' \
+                                            f'&wdref={parse.quote(referer_url, safe="")}'
+
                 get_confirm_order_page_request_headers['Referer'] = referer_url
+                get_confirm_order_promise_uuid_headers['Referer'] = f'{referer_url}&{confirm_order_page_params}'
 
                 self.sess.cookies.set('_modc', zzz)
 
                 retry_interval = config.retry_interval
                 retry_count = 0
-                while True:
+
+                submit_page_data = self.get_submit_page_data.get(sku_id)
+                while not submit_page_data:
                     if retry_count >= 10:
                         logger.error("加载订单页面请求失败，终止抢购！")
                         exit(-1)
@@ -2072,36 +2122,118 @@ class Assistant(object):
                                                            url=url,
                                                            method='GET',
                                                            headers=get_confirm_order_page_request_headers,
-                                                           params=params
+                                                           params=confirm_order_page_params
                                                            ,
                                                            cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'))
                         resp_data = resp.body
-                        # TODO 修改逻辑
-                        resp_json = parse_json(resp_data)
-                        if resp_json.get('url'):
-                            # https://divide.jd.com/user_routing?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                            router_url = 'https:' + resp_json.get('url')
-                            # https://marathon.jd.com/captcha.html?skuId=8654289&sn=c3f4ececd8461f0e4d7267e96a91e0e0&from=pc
-                            seckill_url = router_url.replace('divide', 'marathon').replace('user_routing',
-                                                                                           'captcha.html')
-                            logger.info("抢购链接获取成功: %s", seckill_url)
-                            return seckill_url
-                        else:
-                            retry_count += 1
-                            if resp_data:
-                                logger.info(f"响应数据：{resp_data}")
-                            logger.info("商品%s第%s次加载订单页面请求失败，链接为空，%s秒后重试", sku_id, retry_count, retry_interval)
-                            time.sleep(retry_interval)
+                        if resp_data.startswith("<!DOCTYPE html>"):
+                            submit_page_data = self.get_submit_page_data.get(sku_id)
+                            if not submit_page_data:
+                                submit_page_data = parsing_submit_page_data(resp_data)
+                                # 从响应头中提取cookies并更新
+                                cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                                self.get_submit_page_data[sku_id] = submit_page_data
+                            break
                     except Exception as e:
-                        retry_count += 1
                         logger.error("异常信息：%s", e)
-                        logger.info("商品%s第%s次加载订单页面请求失败，%s秒后重试", sku_id, retry_count, retry_interval)
-                        time.sleep(retry_interval)
+                    retry_count += 1
+                    logger.info("商品%s第%s次加载订单页面请求失败，%s秒后重试", sku_id, retry_count, retry_interval)
+                    time.sleep(retry_interval)
+
+                promise_uuid_retry_interval = 0.02
+                promise_uuid = self.get_promiseUuid.get(sku_id)
+                if not promise_uuid:
+                    with self.sem:
+                        # 订单页参数请求
+                        if not self.get_promiseUuid.get(sku_id):
+                            i = 0
+                            while i < 8:
+                                try:
+                                    shipeffect_params = {'reg': 1, 'action': 1, 'reset': 1,
+                                                         'callback': f'preShipeffectCb{letterMap[i + 1]}',
+                                                         'r': random.random(), 'sceneval': 2,
+                                                         'traceid': submit_page_data.get('traceid')}
+                                    logger.info('订单页参数请求')
+                                    url = 'https://wq.jd.com/deal/mship/shipeffect'
+                                    resp = http_util.send_http_request(self.socket_client,
+                                                                       url=url,
+                                                                       method='GET',
+                                                                       headers=get_confirm_order_promise_uuid_headers,
+                                                                       cookies=self.get_cookies_str_by_domain_or_path(
+                                                                           'wq.jd.com'),
+                                                                       params=shipeffect_params)
+                                    promise_uuid = parse_promise_uuid(resp.body)
+                                    if promise_uuid:
+                                        self.get_promiseUuid[sku_id] = promise_uuid
+                                        break
+                                    # 从响应头中提取cookies并更新
+                                    # cookie_util.merge_cookies_from_response(self.sess.cookies, resp, url)
+                                    # self.get_and_update_cookies_str()
+                                except Exception as e:
+                                    logger.error("异常信息：%s", e)
+                                i += 1
+                                logger.info("商品%s第%s次订单页参数请求失败，0.02秒后重试", sku_id, i, promise_uuid_retry_interval)
+                                time.sleep(promise_uuid_retry_interval)
+
+                submit_data = self.get_submit_data.get(sku_id)
+                if not submit_data:
+                    with self.sem:
+                        # 订单参数处理
+                        if not self.get_submit_data.get(sku_id):
+                            # TODO 根据 submit_page 和 promise_uuid 拼装submit_data
+                            ship = submit_page_data.pop('ship')
+
+                            params_list = []
+                            for key, value in submit_page_data.items():
+                                params_list.append(f'&{key}={value}')
+
+                            ship_str = ship
+
+                            params_list.append(f'&ship={ship_str}')
+
+                            submit_data = ''.join(params_list)
+                            if submit_data:
+                                # 保存submit_data
+                                self.get_submit_data[sku_id] = submit_data
+                        return submit_data
+
+            def submit_order_request(submit_data):
+                # 新提交订单请求
+                with self.sem:
+                    logger.info('提交订单请求')
+                    try:
+                        resp = http_util.send_http_request(self.socket_client,
+                                                           url='https://wq.jd.com/deal/msubmit/confirm',
+                                                           method='GET',
+                                                           headers=get_confirm_order_headers,
+                                                           cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'),
+                                                           data=submit_data)
+                        response_data = resp.body
+                        if resp.status_code == requests.codes.OK:
+                            if response_data:
+                                logger.info('订单提交失败')
+                                logger.info(f'响应数据：\n{response_data}')
+                                return False
+                            else:
+                                logger.info('订单提交完成，在手机APP中可以查看是否完成下单')
+                                return True
+                        else:
+                            logger.info('订单提交失败，响应码：%s', resp.status_code)
+                            logger.info(f'响应数据：\n{response_data}')
+                            return False
+                    except Exception as e:
+                        logger.error(e)
+                        return False
 
         else:
             def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
                 exit(-1)
+
+            def submit_order_request(submit_data):
+                exit(-1)
+
         self.request_info['get_confirm_order_page_request'] = get_confirm_order_page_request
+        self.request_info['submit_order_request'] = submit_order_request
 
         return server_buy_time, realy_buy_time
 
@@ -2286,7 +2418,8 @@ class Assistant(object):
                 if br.openUrl('https://idt.jd.com/paypwd/toUpdateOrForget/', jsFunc):
                     if not self.eid or not self.fp or not self.track_id:
                         if count > 3:
-                            logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+                            logger.error(
+                                '初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
                             exit(-1)
                     else:
                         break
@@ -2347,7 +2480,8 @@ class Assistant(object):
                 if br.openUrl('https://order.jd.com/center/list.action', jsFunc):
                     if not self.eid or not self.fp or not self.track_id:
                         if count > 3:
-                            logger.error('初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
+                            logger.error(
+                                '初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
                             exit(-1)
                     else:
                         break
@@ -2470,7 +2604,7 @@ class Assistant(object):
                             break
                         except Exception as e:
                             i += 1
-                            logger.error('订单结算请求数据连接超时，开始第 %s 次重试，信息：%s', i, e)
+                            logger.error('订单结算请求错误，开始第 %s 次重试，信息：%s', i, e)
         else:
             def get_checkout_page_request(params):
                 i = 0
