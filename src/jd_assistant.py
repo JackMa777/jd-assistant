@@ -73,10 +73,13 @@ class Assistant(object):
         self.headers = {'User-Agent': self.user_agent}
 
         # 用户相关
+        if use_new:
+            self.data = dict()
         self.eid = global_config.get('config', 'eid')
         self.fp = global_config.get('config', 'fp')
         self.track_id = global_config.get('config', 'track_id')
         self.risk_control = global_config.get('config', 'risk_control')
+
         self.area_id = None
 
         self.item_zzz = dict()
@@ -621,7 +624,14 @@ class Assistant(object):
         :return: 响应
         """
         url = 'https://item.m.jd.com/product/{}.html'.format(sku_id)
-        page = requests.get(url=url, headers=self.headers)
+        headers = self.headers.copy()
+        headers['dnt'] = '1'
+        headers['sec-fetch-user'] = '?1'
+        headers['sec-fetch-site'] = 'none'
+        headers['sec-fetch-mode'] = 'navigate'
+        headers['sec-fetch-dest'] = 'document'
+        headers['upgrade-insecure-requests'] = '1'
+        page = self.sess.get(url=url, headers=headers)
         return page
 
     def _get_item_detail_page(self, sku_id):
@@ -1429,7 +1439,7 @@ class Assistant(object):
                             logger.info('第[%s/%s]次尝试提交订单', count, retry)
                             with self.sem:
                                 # 下单请求
-                                if submit_order_request(submit_data):
+                                if submit_order_request(submit_data, count):
                                     break
                                 logger.info('休息%ss', interval)
                                 time.sleep(interval)
@@ -1501,6 +1511,7 @@ class Assistant(object):
 
         self.item_zzz[sku_id] = zzz
 
+        # TODO self.area_id没值
         area_id_list = list(map(lambda x: x.strip(), re.split('_|-', self.area_id)))
 
         area_url = ''
@@ -2184,8 +2195,19 @@ class Assistant(object):
                             ship = submit_page_data.pop('ship')
 
                             params_list = []
+                            params_list.append('paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
                             for key, value in submit_page_data.items():
                                 params_list.append(f'&{key}={value}')
+                            # params_list.append(f'&token2={}')
+                            # params_list.append(f'&skulist={}')
+                            # params_list.append(f'&traceid={}')
+                            # params_list.append(f'&valuableskus={}')
+                            # params_list.append(f'&tuanfull={}')
+                            # params_list.append(f'&commlist={}')
+
+
+                            # params_list.append(f'&dpid={?}')
+                            # params_list.append(f'&scan_orig={?}')
 
                             ship_str = ship
 
@@ -2197,17 +2219,18 @@ class Assistant(object):
                                 self.get_submit_data[sku_id] = submit_data
                         return submit_data
 
-            def submit_order_request(submit_data):
+            def submit_order_request(submit_data, count):
                 # 新提交订单请求
                 with self.sem:
                     logger.info('提交订单请求')
+                    submit_data = f'{submit_data}&r={random.random()}&callback=confirmCb={letterMap[count]}'
                     try:
                         resp = http_util.send_http_request(self.socket_client,
                                                            url='https://wq.jd.com/deal/msubmit/confirm',
                                                            method='GET',
                                                            headers=get_confirm_order_headers,
                                                            cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'),
-                                                           data=submit_data)
+                                                           params=submit_data)
                         response_data = resp.body
                         if resp.status_code == requests.codes.OK:
                             if response_data:
@@ -2229,7 +2252,7 @@ class Assistant(object):
             def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
                 exit(-1)
 
-            def submit_order_request(submit_data):
+            def submit_order_request(submit_data, count):
                 exit(-1)
 
         self.request_info['get_confirm_order_page_request'] = get_confirm_order_page_request
@@ -2391,20 +2414,10 @@ class Assistant(object):
 
         if self.use_new:
             # 获取：eid、fp、jstub、token、sdkToken（默认为空）
-            # pass
-
             def jsCallback(data):
                 # print(data)
-                eid = data['eid']
-                fp = data['fp']
-                track_id = data['trackId']
-                if eid:
-                    self.eid = eid
-                if fp:
-                    self.fp = fp
-                if track_id:
-                    self.track_id = track_id
-                if eid and fp and track_id:
+                self.data = data
+                if len(data) > 0:
                     logger.info('自动初始化下单参数成功！')
                     return True
                 return False
@@ -2416,7 +2429,7 @@ class Assistant(object):
             count = 0
             while True:
                 if br.openUrl('https://idt.jd.com/paypwd/toUpdateOrForget/', jsFunc):
-                    if not self.eid or not self.fp or not self.track_id:
+                    if not len(self.data) > 0:
                         if count > 3:
                             logger.error(
                                 '初始化下单参数失败！请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
