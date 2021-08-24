@@ -552,7 +552,6 @@ class Assistant(object):
             self.nick_name = self.get_user_info()
             self._save_cookies()
 
-        # TODO 修改逻辑
         # 获取下单必须参数
         self.init_order_request_info()
 
@@ -1378,7 +1377,6 @@ class Assistant(object):
         :return: 抢购结果 True/False
         """
 
-        # TODO 兼容并发
         for count in range(1, retry + 1):
             logger.info('第[%s/%s]次尝试抢购商品:%s', count, retry, sku_id)
 
@@ -1503,15 +1501,14 @@ class Assistant(object):
         if self.config.fast_mode:
             self.close_now()
 
-    def new_parse_item_detail_page(self, sku_id, page):
-        match = re.search(r'"zzz":\"(.*)\"', page.text)
+    def new_parse_item_detail_page(self, sku_id, html):
+        match = re.search(r'"zzz":\"(.*)\"', html)
         zzz = match.group(1)
         if not zzz:
             return False
 
         self.item_zzz[sku_id] = zzz
 
-        # TODO self.area_id没值
         area_id_list = list(map(lambda x: x.strip(), re.split('_|-', self.area_id)))
 
         area_url = ''
@@ -1555,6 +1552,36 @@ class Assistant(object):
         self.special_attrs[sku_id] = special_attrs
 
         return True
+
+    def new_init_yuyue_buy_time(self, sku_id=None, html=None):
+        config = self.config
+
+        logger.info('初始化预约抢购时间')
+        # 处理时间
+        server_buy_datetime = None
+        if config.sku_buy_time:
+            # 根据配置初始化
+            server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
+        else:
+            # 自动获取
+            yuyue = re.search(r'"yuyue":({.*})', html).group(1)
+            if yuyue:
+                yuyue_json = parse_json(yuyue)
+                buy_start_time = yuyue_json['qiangStime']
+                if buy_start_time:
+                    buy_end_time = yuyue_json['qiangEtime']
+                    server_buy_datetime = datetime.strptime(buy_start_time, "%Y-%m-%d %H:%M:%S")
+                    logger.info('商品%s预约抢购，开始时间:%s，结束时间:%s', sku_id, buy_start_time, buy_end_time)
+                else:
+                    logger.debug(f"响应数据：{html}")
+                    logger.info("商品%s无法获取预约抢购时间，请重新设置sku_id", sku_id)
+                    exit(-1)
+            else:
+                logger.info("商品%s不是 预约抢购商品 或 未开始预约，请重新设置sku_id", sku_id)
+                exit(-1)
+        return int(time.mktime(server_buy_datetime.timetuple())), (
+                server_buy_datetime + timedelta(milliseconds=-config.buy_time_offset)).strftime(
+            "%Y-%m-%d %H:%M:%S.%f")
 
     def init_yuyue_buy_time(self, sku_id=None, header=None, payload=None):
         if header is None:
@@ -2035,11 +2062,12 @@ class Assistant(object):
 
         zzz = self.item_zzz.get(sku_id)
         retry_count = 0
+        item_page_resp = self.new_get_item_detail_page(sku_id)
+        item_page = item_page_resp.text
         while not zzz:
             retry_count += 1
             logger.info('加载订单')
-            page = self.new_get_item_detail_page(sku_id)
-            if not self.new_parse_item_detail_page(sku_id, page):
+            if not self.new_parse_item_detail_page(sku_id, item_page):
                 if retry_count > 10:
                     logger.error('无法获取zzz，超出重试次数，抢购停止')
                     exit(-1)
@@ -2047,42 +2075,20 @@ class Assistant(object):
                     logger.error('第 %s 次加载订单失败', retry_count)
                     retry_count += 1
                     time.sleep(1)
+                    if item_page_resp.status_code != requests.codes.OK or not item_page:
+                        item_page_resp = self.new_get_item_detail_page(sku_id)
+                        item_page = item_page_resp.text
                     continue
             else:
                 zzz = self.item_zzz.get(sku_id)
 
         area_id = parse_area_id(self.area_id)
-        cat = self.item_cat.get(sku_id)
-        retry_count = 0
-        while not cat:
-            retry_count += 1
-            logger.info('第 %s 次获取商品页信息', retry_count)
-            page = self._get_item_detail_page(sku_id)
-            if not self.parse_item_detail_page(sku_id, page):
-                if retry_count > 10:
-                    logger.error('无法获取cat，超出重试次数，抢购停止')
-                    exit(-1)
-                else:
-                    logger.error('第 %s 次获取商品页信息失败：%s', page)
-                    time.sleep(1)
-                    continue
-            else:
-                cat = self.item_cat.get(sku_id)
         vender_id = self.item_vender_ids.get(sku_id)
         param_json = self.param_json.get(sku_id)
         special_attrs = self.special_attrs.get(sku_id)
 
         # 初始化预约抢购时间
-        server_buy_time, realy_buy_time = self.init_yuyue_buy_time(sku_id, self.headers.copy(), {
-            # 'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
-            'skuId': sku_id,
-            'cat': cat,
-            'area': area_id,
-            'shopId': vender_id,
-            'venderId': vender_id,
-            'paramJson': param_json,
-            'num': 1,
-        })
+        server_buy_time, realy_buy_time = self.new_init_yuyue_buy_time(sku_id, item_page)
 
         # 初始化加载订单请求方法
         if fast_mode:
@@ -2412,6 +2418,11 @@ class Assistant(object):
 
         br = self.br
 
+        # 获取：ipLoc-djd、ipLocation
+        if address_util.get_user_address(self) is not True:
+            logger.error('获取地址信息失败，请重试！')
+            exit(-1)
+
         if self.use_new:
             # 获取：eid、fp、jstub、token、sdkToken（默认为空）
             def jsCallback(data):
@@ -2443,11 +2454,6 @@ class Assistant(object):
                 count += 1
                 logger.info('初始化下单参数失败！开始第 %s 次重试', count)
         else:
-            # 获取：ipLoc-djd、ipLocation
-            if address_util.get_user_address(self) is not True:
-                logger.error('获取地址信息失败，请重试！')
-                exit(-1)
-
             # 获取：eid、fp、track_id、risk_control（默认为空）
 
             def jsCallback(data):
