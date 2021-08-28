@@ -231,11 +231,12 @@ class Assistant(object):
                     html = resp.text
                     if html and 'pin' in html:
                         match = re.search(r'^try\{userInfoCallBack\((.*)\);\}catch\(e\)\{\}$', html)
-                        json_str = match.group(1)
-                        if json_str:
-                            json_dict = json.loads(json_str)
-                            self.nick_name = json_dict['userdata']['renderJDDate'][0]['msg']['nickname']
-                            return True
+                        if match:
+                            json_str = match.group(1)
+                            if json_str:
+                                json_dict = json.loads(json_str)
+                                self.nick_name = json_dict['userdata']['renderJDDate'][0]['msg']['nickname']
+                                return True
             except Exception as e:
                 logger.error(e)
 
@@ -518,15 +519,16 @@ class Assistant(object):
         br.client.set_window_size(375, 812)
         domain = '.m.jd.com'
         # br.openUrl(f'https://plogin{domain}/login/login')
-        br.openUrl(f'https://m.jd.com/')
+        br.openUrl(f'https://plogin{domain}/login/login')
         # br.openUrl(f'https://passport{domain}/new/login.aspx')
         br.set_cookies(self.sess.cookies, domain)
 
         if self.is_login:
+            # br.openUrl(f'https://m.jd.com/')
             logger.info('登录成功')
         else:
-            retry_times = 600
-            for _ in range(retry_times):
+            retry_count = 60
+            for _ in range(retry_count):
                 pt_key = br.client.get_cookie('pt_key')
                 if pt_key:
                     break
@@ -1503,6 +1505,8 @@ class Assistant(object):
 
     def new_parse_item_detail_page(self, sku_id, html):
         match = re.search(r'"zzz":\"(.*)\"', html)
+        if not match:
+            return False
         zzz = match.group(1)
         if not zzz:
             return False
@@ -1564,18 +1568,20 @@ class Assistant(object):
             server_buy_datetime = datetime.strptime(config.sku_buy_time, "%Y-%m-%d %H:%M:%S.%f")
         else:
             # 自动获取
-            yuyue = re.search(r'"yuyue":({.*})', html).group(1)
-            if yuyue:
-                yuyue_json = parse_json(yuyue)
-                buy_start_time = yuyue_json['qiangStime']
-                if buy_start_time:
-                    buy_end_time = yuyue_json['qiangEtime']
-                    server_buy_datetime = datetime.strptime(buy_start_time, "%Y-%m-%d %H:%M:%S")
-                    logger.info('商品%s预约抢购，开始时间:%s，结束时间:%s', sku_id, buy_start_time, buy_end_time)
-                else:
-                    logger.debug(f"响应数据：{html}")
-                    logger.info("商品%s无法获取预约抢购时间，请重新设置sku_id", sku_id)
-                    exit(-1)
+            match = re.search(r'"yuyue":({.*})', html)
+            if match:
+                yuyue = match.group(1)
+                if yuyue:
+                    yuyue_json = parse_json(yuyue)
+                    buy_start_time = yuyue_json['qiangStime']
+                    if buy_start_time:
+                        buy_end_time = yuyue_json['qiangEtime']
+                        server_buy_datetime = datetime.strptime(buy_start_time, "%Y-%m-%d %H:%M:%S")
+                        logger.info('商品%s预约抢购，开始时间:%s，结束时间:%s', sku_id, buy_start_time, buy_end_time)
+                    else:
+                        logger.debug(f"响应数据：{html}")
+                        logger.info("商品%s无法获取预约抢购时间，请重新设置sku_id", sku_id)
+                        exit(-1)
             else:
                 logger.info("商品%s不是 预约抢购商品 或 未开始预约，请重新设置sku_id", sku_id)
                 exit(-1)
@@ -2104,6 +2110,8 @@ class Assistant(object):
             def parsing_submit_page_data(html):
                 # TODO 从页面获取：token2、skulist、venderId、mli.promotion.discountPrice、mainSku.cid切割“_”取[2]、sucPageType、traceId
                 data = dict()
+                # script = BeautifulSoup(html).find('body').find('script', {'type': 'text/javascript'}, text='window.dealData')
+                script = BeautifulSoup(html).find('body').find('script', {'type': 'text/javascript'})
 
                 return data
 

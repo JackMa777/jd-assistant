@@ -53,7 +53,7 @@ class CustomBrowser(object):
     def set_cookies(self, cookies: CookieJar, domain):
         if cookies:
             for cookie in iter(cookies):
-                if domain in cookie.domain:
+                if cookie.domain in domain:
                     cookie_dict = {
                         'name': cookie.name,
                         'value': cookie.value,
