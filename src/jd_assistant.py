@@ -2111,7 +2111,29 @@ class Assistant(object):
                 # TODO 从页面获取：token2、skulist、venderId、mli.promotion.discountPrice、mainSku.cid切割“_”取[2]、sucPageType、traceId
                 data = dict()
                 # script = BeautifulSoup(html).find('body').find('script', {'type': 'text/javascript'}, text='window.dealData')
-                script = BeautifulSoup(html).find('body').find('script', {'type': 'text/javascript'})
+                script = BeautifulSoup(html, 'html').find('body').find('script', {'type': 'text/javascript'})
+                if script:
+                    text = script.get_text()
+                    token2search = re.search(r'"token2":\"(.*)\"', text)
+                    if token2search:
+                        data['token2'] = token2search.group(1)
+                    skulistsearch = re.search(r'"skulist":\"(.*)\"', text)
+                    if skulistsearch:
+                        data['skulist'] = skulistsearch.group(1)
+                    traceIdsearch = re.search(r'"traceId":\"(.*)\"', text)
+                    if traceIdsearch:
+                        data['traceid'] = traceIdsearch.group(1)
+                    mainSkusearch = re.search(r'"promotion":({([^}])*})', text)
+                    if mainSkusearch:
+                        data['discountPrice'] = json.loads(mainSkusearch.group(1))['discountPrice']
+                    # TODO mainSku.cid
+                    mainSkusearch = re.search(r'"mainSku":({([^}])*})', text)
+                    if mainSkusearch:
+                        mainSku = json.loads(mainSkusearch.group(1))['mainSku']
+                        # TODO mainSku.cid
+                        data['mainSku.cid'] = mainSku.cid
+
+
 
                 return data
 
@@ -2207,6 +2229,8 @@ class Assistant(object):
                         if not self.get_submit_data.get(sku_id):
                             # TODO 根据 submit_page 和 promise_uuid 拼装submit_data
                             ship = submit_page_data.pop('ship')
+                            discountPrice = submit_page_data.pop('discountPrice')
+                            mainSkucid = submit_page_data.pop('mainSku.cid')
 
                             params_list = []
                             params_list.append('paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
@@ -2215,7 +2239,9 @@ class Assistant(object):
                             # params_list.append(f'&token2={}')
                             # params_list.append(f'&skulist={}')
                             # params_list.append(f'&traceid={}')
-                            # params_list.append(f'&valuableskus={}')
+                            params_list.append(f'&valuableskus={sku_id},{config.num},{discountPrice},{mainSkucid}')
+
+
                             # params_list.append(f'&tuanfull={}')
                             # params_list.append(f'&commlist={}')
 
