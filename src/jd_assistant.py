@@ -2111,7 +2111,7 @@ class Assistant(object):
                 # TODO 从页面获取：token2、skulist、venderId、mli.promotion.discountPrice、mainSku.cid切割“_”取[2]、sucPageType、traceId
                 data = dict()
                 # script = BeautifulSoup(html).find('body').find('script', {'type': 'text/javascript'}, text='window.dealData')
-                script = BeautifulSoup(html, 'html').find('body').find('script', {'type': 'text/javascript'})
+                script = BeautifulSoup(html, features="html5lib").find('body').find('script', {'type': 'text/javascript'})
                 if script:
                     text = script.get_text()
                     token2search = re.search(r'"token2":\"(.*)\"', text)
@@ -2126,21 +2126,21 @@ class Assistant(object):
                     mainSkusearch = re.search(r'"promotion":({([^}])*})', text)
                     if mainSkusearch:
                         data['discountPrice'] = json.loads(mainSkusearch.group(1))['discountPrice']
-                    # TODO mainSku.cid
-                    mainSkusearch = re.search(r'"mainSku":({([^}])*})', text)
-                    if mainSkusearch:
-                        mainSku = json.loads(mainSkusearch.group(1))['mainSku']
-                        # TODO mainSku.cid
-                        data['mainSku.cid'] = mainSku.cid
-
-
-
+                    cidsearch = re.search(r'"cid":\"(.*)\"', text)
+                    if cidsearch:
+                        data['cid'] = cidsearch.group(1).split('_')[2]
+                    sucPageTypesearch = re.search(r'"sucPageType":\"(.*)\"', text)
+                    if sucPageTypesearch:
+                        data['sucPageType'] = sucPageTypesearch.group(1)
                 return data
 
-            def parse_promise_uuid(string):
-                # TODO 解析响应数据，提取promise_uuid
-                promise_uuid = ""
-
+            def parse_promise_uuid(resp_text):
+                match = re.search(r'preShipeffectCb[A-Z]\((\{.*\})\)', resp_text)
+                if match:
+                    ship_effect = json.loads(match.group(1))
+                    promise_uuid = ship_effect['pickshipment']['promiseUuid']
+                else:
+                    promise_uuid = ''
                 return promise_uuid
 
             def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
@@ -2227,19 +2227,19 @@ class Assistant(object):
                     with self.sem:
                         # 订单参数处理
                         if not self.get_submit_data.get(sku_id):
-                            # TODO 根据 submit_page 和 promise_uuid 拼装submit_data
-                            ship = submit_page_data.pop('ship')
                             discountPrice = submit_page_data.pop('discountPrice')
-                            mainSkucid = submit_page_data.pop('mainSku.cid')
+                            cid = submit_page_data.pop('cid')
 
                             params_list = []
                             params_list.append('paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
+                            params_list.append('&tuanfull=')
+                            params_list.append(submit_page_data.pop('sucPageType'))
                             for key, value in submit_page_data.items():
                                 params_list.append(f'&{key}={value}')
                             # params_list.append(f'&token2={}')
                             # params_list.append(f'&skulist={}')
                             # params_list.append(f'&traceid={}')
-                            params_list.append(f'&valuableskus={sku_id},{config.num},{discountPrice},{mainSkucid}')
+                            params_list.append(f'&valuableskus={sku_id},{config.num},{discountPrice},{cid}')
 
 
                             # params_list.append(f'&tuanfull={}')
@@ -2249,9 +2249,10 @@ class Assistant(object):
                             # params_list.append(f'&dpid={?}')
                             # params_list.append(f'&scan_orig={?}')
 
-                            ship_str = ship
+                            # TODO ship
+                            ship_list = [promise_uuid, '', '']
 
-                            params_list.append(f'&ship={ship_str}')
+                            params_list.append(f'&ship={"".join(ship_list)}')
 
                             submit_data = ''.join(params_list)
                             if submit_data:
