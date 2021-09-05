@@ -1508,7 +1508,7 @@ class Assistant(object):
         if not match:
             return False
         zzz = match.group(1)
-        if not zzz:
+        if zzz is None:
             return False
 
         self.item_zzz[sku_id] = zzz
@@ -2070,7 +2070,7 @@ class Assistant(object):
         retry_count = 0
         item_page_resp = self.new_get_item_detail_page(sku_id)
         item_page = item_page_resp.text
-        while not zzz:
+        while zzz is None:
             retry_count += 1
             logger.info('加载订单')
             if not self.new_parse_item_detail_page(sku_id, item_page):
@@ -2132,6 +2132,9 @@ class Assistant(object):
                     sucPageTypesearch = re.search(r'"sucPageType":\"(.*)\"', text)
                     if sucPageTypesearch:
                         data['sucPageType'] = sucPageTypesearch.group(1)
+                    shipmentsearch = re.search(r'"shipment":(\[(?:(.|\n)|(\[.|\n]))*])(?:.|\n)*,(?:.|\n)*"mzsuits"', text)
+                    if shipmentsearch:
+                        data['shipment'] = json.loads(shipmentsearch.group(1))
                 return data
 
             def parse_promise_uuid(resp_text):
@@ -2250,7 +2253,7 @@ class Assistant(object):
                             # params_list.append(f'&scan_orig={?}')
 
                             # TODO ship
-                            ship_list = [promise_uuid, '', '']
+                            ship_list = ['?', '?', '', promise_uuid, '', '']
 
                             params_list.append(f'&ship={"".join(ship_list)}')
 
