@@ -2132,9 +2132,16 @@ class Assistant(object):
                     sucPageTypesearch = re.search(r'"sucPageType":\"(.*)\"', text)
                     if sucPageTypesearch:
                         data['sucPageType'] = sucPageTypesearch.group(1)
+                    venderIdsearch = re.search(r'"venderCart":(?:.|\n)*"venderId":\"(.*)\"', text)
+                    if venderIdsearch:
+                        data['venderId'] = venderIdsearch.group(1)
                     shipmentsearch = re.search(r'"shipment":(\[(?:(.|\n)|(\[.|\n]))*])(?:.|\n)*,(?:.|\n)*"mzsuits"', text)
                     if shipmentsearch:
-                        data['shipment'] = json.loads(shipmentsearch.group(1))
+                        shipment = json.loads(shipmentsearch.group(1))
+                        shipment_data = shipment.get(0)
+                        if shipment_data:
+                            data['shipId'] = shipment_data['id']
+                            data['shipType'] = shipment_data['type']
                 return data
 
             def parse_promise_uuid(resp_text):
@@ -2232,6 +2239,9 @@ class Assistant(object):
                         if not self.get_submit_data.get(sku_id):
                             discountPrice = submit_page_data.pop('discountPrice')
                             cid = submit_page_data.pop('cid')
+                            shipId = submit_page_data.pop('shipId')
+                            shipType = submit_page_data.pop('shipType')
+                            venderId = submit_page_data.pop('venderId')
 
                             params_list = []
                             params_list.append('paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
@@ -2252,8 +2262,41 @@ class Assistant(object):
                             # params_list.append(f'&dpid={?}')
                             # params_list.append(f'&scan_orig={?}')
 
+                            ship_list = None
+                            promise_uuid_index = None
+                            if shipType == '0':
+                                ship_list = [''] * 25
+                                promise_uuid_index = 22
+                            elif shipType == '1':
+                                ship_list = [''] * 9
+                                promise_uuid_index = 7
+                            elif shipType == '2'\
+                                    or shipType == '5'\
+                                    or shipType == '9':
+                                ship_list = [''] * 20
+                                promise_uuid_index = 17
+                            elif shipType == '8':
+                                ship_list = [''] * 10
+                                promise_uuid_index = 8
+                            elif shipType == '10':
+                                ship_list = [''] * 5
+                                promise_uuid_index = 4
+                            else:
+                                ship_list = [''] * 25
+                                promise_uuid_index = 22
+
+                            ship_list[0] = shipType
+                            ship_list[1] = shipId
+                            if shipType in ['1', '2', '5', '9', '10']:
+                                ship_list[2] = venderId
+                            elif shipType == '8':
+                                ship_list[2] = '0'
+                            else:
+                                ship_list[17] = '0'
+                            ship_list[promise_uuid_index] = promise_uuid
                             # TODO ship
-                            ship_list = ['?', '?', '', promise_uuid, '', '']
+                            # switch(t.shipType)
+
 
                             params_list.append(f'&ship={"".join(ship_list)}')
 
