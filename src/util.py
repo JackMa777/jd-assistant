@@ -81,6 +81,49 @@ USER_AGENTS = [
 ]
 
 
+def nested_parser(left, right, text, find_str=None):
+    stack = 0
+    start_index = None
+    results = []
+    for i, c in enumerate(text):
+        if c == left:
+            if stack == 0:
+                start_index = i
+            # 入栈
+            stack += 1
+        elif c == right:
+            # 出栈
+            stack -= 1
+            if stack == 0:
+                result = text[start_index:i+1]
+                if find_str and find_str in result:
+                    return result
+                results.append(result)
+    return results
+
+
+def nested_inner_parser(left, right, text, find_str=None):
+    stack = 0
+    start_index = None
+    results = []
+    for i, c in enumerate(text):
+        if c == left:
+            if stack == 0:
+                if i == 0:
+                    continue
+                start_index = i
+            # 入栈
+            stack += 1
+        elif c == right:
+            # 出栈
+            stack -= 1
+            if stack == 0:
+                result = text[start_index:i+1]
+                if find_str and find_str in result:
+                    return result
+                results.append(result)
+    return results
+
 def encrypt_pwd(password, public_key=RSA_PUBLIC_KEY):
     rsa_key = RSA.importKey(public_key)
     encryptor = Cipher_pkcs1_v1_5.new(rsa_key)

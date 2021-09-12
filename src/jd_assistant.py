@@ -38,7 +38,7 @@ from util import (
     parse_items_dict,
     response_status,
     save_image,
-    split_area_id, DEFAULT_M_USER_AGENT
+    split_area_id, DEFAULT_M_USER_AGENT, nested_parser, nested_inner_parser
 )
 
 
@@ -95,6 +95,7 @@ class Assistant(object):
         # self.seckill_url = dict()
 
         self.item_requests = []
+        self.item_requests.append(dict())
         self.item_requests.append(dict())
         self.item_requests.append(dict())
         self.item_requests.append(dict())
@@ -185,6 +186,10 @@ class Assistant(object):
     @property
     def get_submit_data(self):
         return self.item_requests[9]
+
+    @property
+    def get_submit_referer(self):
+        return self.item_requests[10]
 
     def _load_cookies(self):
         cookies_file = ''
@@ -1426,6 +1431,7 @@ class Assistant(object):
         if self.use_new:
             get_confirm_order_page_request = self.request_info['get_confirm_order_page_request']
             submit_order_request = self.request_info['submit_order_request']
+
             def start_func():
 
                 # 订单请求页面
@@ -2110,38 +2116,39 @@ class Assistant(object):
             def parsing_submit_page_data(html):
                 # TODO 从页面获取：token2、skulist、venderId、mli.promotion.discountPrice、mainSku.cid切割“_”取[2]、sucPageType、traceId
                 data = dict()
-                # script = BeautifulSoup(html).find('body').find('script', {'type': 'text/javascript'}, text='window.dealData')
-                script = BeautifulSoup(html, features="html5lib").find('body').find('script', {'type': 'text/javascript'})
-                if script:
-                    text = script.get_text()
-                    token2search = re.search(r'"token2":\"(.*)\"', text)
+                page_data = nested_parser('{', '}', html, 'token2')
+                if isinstance(page_data, str):
+                    token2search = re.search(r'"token2":\"(.*)\"', page_data)
                     if token2search:
                         data['token2'] = token2search.group(1)
-                    skulistsearch = re.search(r'"skulist":\"(.*)\"', text)
+                    skulistsearch = re.search(r'"skulist":\"(.*)\"', page_data)
                     if skulistsearch:
                         data['skulist'] = skulistsearch.group(1)
-                    traceIdsearch = re.search(r'"traceId":\"(.*)\"', text)
+                    traceIdsearch = re.search(r'"traceId":\"(.*)\"', page_data)
                     if traceIdsearch:
                         data['traceid'] = traceIdsearch.group(1)
-                    mainSkusearch = re.search(r'"promotion":({([^}])*})', text)
+                    mainSkusearch = re.search(r'"promotion":({([^}])*})', page_data)
                     if mainSkusearch:
                         data['discountPrice'] = json.loads(mainSkusearch.group(1))['discountPrice']
-                    cidsearch = re.search(r'"cid":\"(.*)\"', text)
+                    cidsearch = re.search(r'"cid":\"(.*)\"', page_data)
                     if cidsearch:
                         data['cid'] = cidsearch.group(1).split('_')[2]
-                    sucPageTypesearch = re.search(r'"sucPageType":\"(.*)\"', text)
+                    sucPageTypesearch = re.search(r'"sucPageType":\"(.*)\"', page_data)
                     if sucPageTypesearch:
                         data['sucPageType'] = sucPageTypesearch.group(1)
-                    venderIdsearch = re.search(r'"venderCart":(?:.|\n)*"venderId":\"(.*)\"', text)
-                    if venderIdsearch:
-                        data['venderId'] = venderIdsearch.group(1)
-                    shipmentsearch = re.search(r'"shipment":(\[(?:(.|\n)|(\[.|\n]))*])(?:.|\n)*,(?:.|\n)*"mzsuits"', text)
-                    if shipmentsearch:
-                        shipment = json.loads(shipmentsearch.group(1))
-                        shipment_data = shipment.get(0)
-                        if shipment_data:
-                            data['shipId'] = shipment_data['id']
-                            data['shipType'] = shipment_data['type']
+                    vender_cart = nested_parser('[', ']', page_data, '"jdShipment":')
+                    if isinstance(vender_cart, str):
+                        venderIdsearch = re.search(r'"venderId":\"(.*)\"', vender_cart)
+                        if venderIdsearch:
+                            data['venderId'] = venderIdsearch.group(1)
+                        jdShipmentsearch = re.search(r'"jdShipment":\"(.*)\"', vender_cart)
+                        if jdShipmentsearch:
+                            data['jdShipment'] = jdShipmentsearch.group(1)
+                        shipment_str = nested_inner_parser('[', ']', vender_cart, '"promiseSendPay":')
+                        if isinstance(shipment_str, str):
+                            shipment = json.loads(shipment_str)
+                            if shipment:
+                                data['shipment'] = shipment
                 return data
 
             def parse_promise_uuid(resp_text):
@@ -2157,12 +2164,18 @@ class Assistant(object):
                 logger.info('加载订单页面请求')
                 jxsid = str(int(time.time() * 1000)) + str(random.random())[2:7]
                 url = 'https://wq.jd.com/deal/confirmorder/main?jxsid=' + jxsid
-                referer_url = f'https://item.m.jd.com/product/{sku_id}.html?sceneval=2&jxsid={jxsid}'
-                confirm_order_page_params = f'{self.item_url_param.get(sku_id)}&commlist={sku_id},,1,{sku_id},1,0,0' \
+                sceneval = '2'
+                referer_url = f'https://item.m.jd.com/product/{sku_id}.html?sceneval={sceneval}&jxsid={jxsid}'
+                commlist = f'{sku_id},,1,{sku_id},1,0,0'
+                confirm_order_page_params = f'{self.item_url_param.get(sku_id)}&commlist={commlist}' \
                                             f'&wdref={parse.quote(referer_url, safe="")}'
 
+                referer = f'{referer_url}&{confirm_order_page_params}'
                 get_confirm_order_page_request_headers['Referer'] = referer_url
-                get_confirm_order_promise_uuid_headers['Referer'] = f'{referer_url}&{confirm_order_page_params}'
+                get_confirm_order_promise_uuid_headers['Referer'] = referer
+
+                if not self.get_submit_referer.get(sku_id):
+                    self.get_submit_referer[sku_id] = referer
 
                 self.sess.cookies.set('_modc', zzz)
 
@@ -2239,28 +2252,41 @@ class Assistant(object):
                         if not self.get_submit_data.get(sku_id):
                             discountPrice = submit_page_data.pop('discountPrice')
                             cid = submit_page_data.pop('cid')
-                            shipId = submit_page_data.pop('shipId')
-                            shipType = submit_page_data.pop('shipType')
+                            shipment = submit_page_data.pop('shipment')
                             venderId = submit_page_data.pop('venderId')
+                            jdShipment = submit_page_data.pop('jdShipment')
 
                             params_list = []
-                            params_list.append('paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
+                            params_list.append(
+                                'paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
                             params_list.append('&tuanfull=')
                             params_list.append(submit_page_data.pop('sucPageType'))
                             for key, value in submit_page_data.items():
                                 params_list.append(f'&{key}={value}')
-                            # params_list.append(f'&token2={}')
-                            # params_list.append(f'&skulist={}')
-                            # params_list.append(f'&traceid={}')
                             params_list.append(f'&valuableskus={sku_id},{config.num},{discountPrice},{cid}')
-
-
-                            # params_list.append(f'&tuanfull={}')
-                            # params_list.append(f'&commlist={}')
-
+                            params_list.append(f'&commlist={commlist}')
+                            params_list.append('&dpid=&scan_orig=')
 
                             # params_list.append(f'&dpid={?}')
                             # params_list.append(f'&scan_orig={?}')
+
+                            # 处理shipment
+                            smallShipments = ["jd311", "jdjzd", "jd411"]
+                            shipmentData = None
+                            shipName = None
+                            shipType = '0'
+                            for i, data in enumerate(shipment):
+                                if data.get('type') == shipType:
+                                    shipmentData = data
+                                    shipName = smallShipments[i]
+                                    break
+
+                            # if not shipmentData:
+                            #     raise AsstException('抢购失败，无法获取订单页收获地址数据，本次抢购结束')
+                            #     exit(-1)
+                            if shipmentData.get('selected') != '1':
+                                raise AsstException('抢购失败，订单页收获地址未自动选择，本次抢购结束')
+                                exit(-1)
 
                             ship_list = None
                             promise_uuid_index = None
@@ -2270,8 +2296,8 @@ class Assistant(object):
                             elif shipType == '1':
                                 ship_list = [''] * 9
                                 promise_uuid_index = 7
-                            elif shipType == '2'\
-                                    or shipType == '5'\
+                            elif shipType == '2' \
+                                    or shipType == '5' \
                                     or shipType == '9':
                                 ship_list = [''] * 20
                                 promise_uuid_index = 17
@@ -2285,6 +2311,8 @@ class Assistant(object):
                                 ship_list = [''] * 25
                                 promise_uuid_index = 22
 
+                            shipId = shipmentData.get('id')
+
                             ship_list[0] = shipType
                             ship_list[1] = shipId
                             if shipType in ['1', '2', '5', '9', '10']:
@@ -2294,11 +2322,102 @@ class Assistant(object):
                             else:
                                 ship_list[17] = '0'
                             ship_list[promise_uuid_index] = promise_uuid
-                            # TODO ship
-                            # switch(t.shipType)
 
+                            if shipType == '0':
+                                # 处理shipName
+                                if shipName == 'jd311':
+                                    ship_list[2] = '4'
+                                    ship_list[7] = '1'
+                                    ship_list[9] = shipmentData.get('promiseDate')
+                                    ship_list[10] = shipmentData.get('promiseTimeRange')
+                                    ship_list[11] = shipmentData.get('promiseSendPay')
+                                    ship_list[12] = shipmentData.get('batchId')
+                                    ship_list[20] = ''
+                                elif shipName == 'jdjzd':
+                                    ship_list[2] = '6'
+                                    ship_list[7] = '3'
+                                    ship_list[9] = shipmentData.get('promiseDate')
+                                    ship_list[10] = shipmentData.get('promiseTimeRange')
+                                    ship_list[11] = shipmentData.get('promiseSendPay')
+                                    ship_list[12] = shipmentData.get('batchId')
+                                    # TODO t.calendarTag
+                                    ship_list[18] = ''  # t.calendarTag
+                                    # && t.calendarTag.length
+                                    # && (0, r.default)(y=t.calendarTag).call(y, function(e){return e.selected}).tagType || ""
+                                    ship_list[20] = ''
+                                elif shipName == 'jd411':
+                                    ship_list[2] = '5'
+                                    ship_list[7] = '2'
+                                    ship_list[11] = shipmentData.get('promiseSendPay')
+                            elif shipType == '2':
+                                if shipmentData:
+                                    ship_list[3] = shipmentData.get('promiseDate')
+                                    ship_list[4] = shipmentData.get('promiseTimeRange')
+                                    ship_list[5] = shipmentData.get('promiseSendPay')
+                                    ship_list[6] = shipmentData.get('batchId')
+                                else:
+                                    ship_list[3] = ''
+                                    ship_list[4] = ''
+                                    ship_list[5] = ''
+                                    ship_list[6] = ''
 
-                            params_list.append(f'&ship={"".join(ship_list)}')
+                            elif shipType == '3' \
+                                    or shipType == '6':
+                                pass
+
+                            elif shipType == '5':
+                                pass
+
+                            elif shipType == '7':
+                                pass
+
+                            elif shipType == '8':
+                                if shipmentData:
+                                    timeRange = shipmentData.get('promiseTimeRange')
+                                    ship_list[3] = shipmentData.get('promiseDate')
+                                    ship_list[4] = timeRange
+                                    ship_list[5] = shipmentData.get('promiseSendPay')
+                                    ship_list[6] = shipmentData.get('batchId')
+                                    if '立即送达' in timeRange:
+                                        ship_list[7] = '1'
+                                    else:
+                                        ship_list[7] = '2'
+                                else:
+                                    ship_list[3] = ''
+                                    ship_list[4] = ''
+                                    ship_list[5] = ''
+                                    ship_list[6] = ''
+
+                            elif shipType == '9':
+                                if shipmentData:
+                                    timeRange = shipmentData.get('promiseTimeRange')
+                                    ship_list[3] = shipmentData.get('promiseDate')
+                                    if '下单' in timeRange:
+                                        ship_list[4] = '立即送达'
+                                    elif timeRange:
+                                        ship_list[4] = timeRange
+                                    else:
+                                        ship_list[4] = ''
+                                    ship_list[5] = shipmentData.get('promiseSendPay')
+                                    ship_list[6] = shipmentData.get('batchId')
+                                    if '下单' in timeRange:
+                                        ship_list[14] = '1'
+                                    elif timeRange:
+                                        ship_list[14] = '2'
+                                    else:
+                                        ship_list[14] = ''
+                                else:
+                                    ship_list[3] = ''
+                                    ship_list[4] = ''
+                                    ship_list[5] = ''
+                                    ship_list[6] = ''
+                                    ship_list[14] = ''
+                            elif shipType == '10':
+                                pass
+                            else:
+                                pass
+
+                            params_list.append(f'&ship={parse.quote("|".join(ship_list), safe="{|,:}")}')
 
                             submit_data = ''.join(params_list)
                             if submit_data:
@@ -2308,32 +2427,32 @@ class Assistant(object):
 
             def submit_order_request(submit_data, count):
                 # 新提交订单请求
-                with self.sem:
-                    logger.info('提交订单请求')
-                    submit_data = f'{submit_data}&r={random.random()}&callback=confirmCb={letterMap[count]}'
-                    try:
-                        resp = http_util.send_http_request(self.socket_client,
-                                                           url='https://wq.jd.com/deal/msubmit/confirm',
-                                                           method='GET',
-                                                           headers=get_confirm_order_headers,
-                                                           cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'),
-                                                           params=submit_data)
-                        response_data = resp.body
-                        if resp.status_code == requests.codes.OK:
-                            if response_data:
-                                logger.info('订单提交失败')
-                                logger.info(f'响应数据：\n{response_data}')
-                                return False
-                            else:
-                                logger.info('订单提交完成，在手机APP中可以查看是否完成下单')
-                                return True
-                        else:
-                            logger.info('订单提交失败，响应码：%s', resp.status_code)
+                logger.info('提交订单请求')
+                submit_data = f'{submit_data}&r={random.random()}&callback=confirmCb{letterMap[count]}'
+                get_confirm_order_headers['Referer'] = self.get_submit_referer.get(sku_id)
+                try:
+                    resp = http_util.send_http_request(self.socket_client,
+                                                       url='https://wq.jd.com/deal/msubmit/confirm',
+                                                       method='GET',
+                                                       headers=get_confirm_order_headers,
+                                                       cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'),
+                                                       params=submit_data)
+                    response_data = resp.body
+                    if resp.status == requests.codes.OK:
+                        if response_data:
+                            logger.info('订单提交失败')
                             logger.info(f'响应数据：\n{response_data}')
                             return False
-                    except Exception as e:
-                        logger.error(e)
+                        else:
+                            logger.info('订单提交完成，在手机APP中可以查看是否完成下单')
+                            return True
+                    else:
+                        logger.info('订单提交失败，响应码：%s', resp.status)
+                        logger.info(f'响应数据：\n{response_data}')
                         return False
+                except Exception as e:
+                    logger.error(e)
+                    return False
 
         else:
             def get_confirm_order_page_request(sku_id, server_buy_time=int(time.time())):
