@@ -2440,12 +2440,16 @@ class Assistant(object):
                     response_data = resp.body
                     if resp.status == requests.codes.OK:
                         if response_data:
-                            logger.info('订单提交失败')
-                            logger.info(f'响应数据：\n{response_data}')
-                            return False
+                            if '"errId":"0"' in response_data:
+                                logger.info('订单提交完成，在手机APP中可以查看是否完成下单')
+                                return True
+                            else:
+                                logger.info('订单提交失败')
+                                logger.info(f'响应数据：\n{response_data}')
+                                return False
                         else:
-                            logger.info('订单提交完成，在手机APP中可以查看是否完成下单')
-                            return True
+                            logger.info('订单提交失败，响应码：%s', resp.status)
+                            return False
                     else:
                         logger.info('订单提交失败，响应码：%s', resp.status)
                         logger.info(f'响应数据：\n{response_data}')
