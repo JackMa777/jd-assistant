@@ -2106,6 +2106,13 @@ class Assistant(object):
         if fast_mode:
             get_confirm_order_page_request_headers = self.headers.copy()
             get_confirm_order_page_request_headers['Host'] = 'wq.jd.com'
+            get_confirm_order_page_request_headers['dnt'] = '1'
+            get_confirm_order_page_request_headers['referer'] = 'https://item.m.jd.com/'
+            get_confirm_order_page_request_headers['sec-fetch-dest'] = 'document'
+            get_confirm_order_page_request_headers['sec-fetch-mode'] = 'navigate'
+            get_confirm_order_page_request_headers['sec-fetch-site'] = 'same-site'
+            get_confirm_order_page_request_headers['sec-fetch-user'] = '?1'
+            get_confirm_order_page_request_headers['upgrade-insecure-requests'] = '1'
 
             get_confirm_order_promise_uuid_headers = self.headers.copy()
 
@@ -2114,9 +2121,11 @@ class Assistant(object):
             letterMap = ["Z", "A", "B", "C", "D", "E", "F", "G", "H", "I"]
 
             def parsing_submit_page_data(html):
-                # TODO 从页面获取：token2、skulist、venderId、mli.promotion.discountPrice、mainSku.cid切割“_”取[2]、sucPageType、traceId
                 data = dict()
                 page_data = nested_parser('{', '}', html, 'token2')
+                if '"errId":"0"' not in page_data:
+                    logger.error('加载订单页数据失败，响应数据：%s', page_data)
+                    raise AsstException('加载订单页数据失败')
                 if isinstance(page_data, str):
                     token2search = re.search(r'"token2":\"(.*)\"', page_data)
                     if token2search:
@@ -2192,8 +2201,7 @@ class Assistant(object):
                                                            url=url,
                                                            method='GET',
                                                            headers=get_confirm_order_page_request_headers,
-                                                           params=confirm_order_page_params
-                                                           ,
+                                                           params=confirm_order_page_params,
                                                            cookies=self.get_cookies_str_by_domain_or_path('wq.jd.com'))
                         resp_data = resp.body
                         if resp_data.startswith("<!DOCTYPE html>"):
@@ -2223,7 +2231,7 @@ class Assistant(object):
                                                          'callback': f'preShipeffectCb{letterMap[i + 1]}',
                                                          'r': random.random(), 'sceneval': 2,
                                                          'traceid': submit_page_data.get('traceid')}
-                                    logger.info('订单页参数请求')
+                                    logger.info('加载订单页参数请求')
                                     url = 'https://wq.jd.com/deal/mship/shipeffect'
                                     resp = http_util.send_http_request(self.socket_client,
                                                                        url=url,
@@ -2250,17 +2258,17 @@ class Assistant(object):
                     with self.sem:
                         # 订单参数处理
                         if not self.get_submit_data.get(sku_id):
-                            discountPrice = submit_page_data.pop('discountPrice')
-                            cid = submit_page_data.pop('cid')
-                            shipment = submit_page_data.pop('shipment')
-                            venderId = submit_page_data.pop('venderId')
-                            jdShipment = submit_page_data.pop('jdShipment')
+                            discountPrice = submit_page_data.pop('discountPrice', '')
+                            cid = submit_page_data.pop('cid', '')
+                            shipment = submit_page_data.pop('shipment', '')
+                            venderId = submit_page_data.pop('venderId', '')
+                            jdShipment = submit_page_data.pop('jdShipment', '')
 
                             params_list = []
                             params_list.append(
                                 'paytype=0&paychannel=1&action=1&reg=1&type=0&gpolicy=&platprice=0&pick=&savepayship=0&sceneval=2&setdefcoupon=0')
                             params_list.append('&tuanfull=')
-                            params_list.append(submit_page_data.pop('sucPageType'))
+                            params_list.append(submit_page_data.pop('sucPageType', ''))
                             for key, value in submit_page_data.items():
                                 params_list.append(f'&{key}={value}')
                             params_list.append(f'&valuableskus={sku_id},{config.num},{discountPrice},{cid}')
@@ -2340,7 +2348,7 @@ class Assistant(object):
                                     ship_list[10] = shipmentData.get('promiseTimeRange')
                                     ship_list[11] = shipmentData.get('promiseSendPay')
                                     ship_list[12] = shipmentData.get('batchId')
-                                    # TODO t.calendarTag
+                                    # t.calendarTag
                                     ship_list[18] = ''  # t.calendarTag
                                     # && t.calendarTag.length
                                     # && (0, r.default)(y=t.calendarTag).call(y, function(e){return e.selected}).tagType || ""
