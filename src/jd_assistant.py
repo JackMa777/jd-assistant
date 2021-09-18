@@ -79,6 +79,7 @@ class Assistant(object):
         self.fp = global_config.get('config', 'fp')
         self.track_id = global_config.get('config', 'track_id')
         self.risk_control = global_config.get('config', 'risk_control')
+        self.letterMap = ["Z", "A", "B", "C", "D", "E", "F", "G", "H", "I"]
 
         self.area_id = None
 
@@ -597,6 +598,74 @@ class Assistant(object):
         reserve_result = soup.find('p', {'class': 'bd-right-result'}).text.strip(' \t\r\n')
         # 预约成功，已获得抢购资格 / 您已成功预约过了，无需重复预约
         logger.info(reserve_result)
+
+    @check_login
+    def new_reserve(self, sku_id):
+        """商品预约
+        :param sku_id: 商品id
+        :return:
+        """
+        try:
+            page_url = 'https://wqs.jd.com/item/yuyue_item.shtml'
+            page_payload = {
+                'sceneval': '2',
+                'buyNum': '2',
+                'sku': sku_id,
+                'isdraw': '',
+                'activeid': '',
+                'activetype': '',
+                'ybServiceId': '',
+                'homeServiceId': '',
+                'ycServiceId': '',
+                'jxsid': str(int(time.time() * 1000)) + str(random.random())[2:7]
+            }
+            page_headers = {
+                'dnt': '1',
+                'referer': 'https://item.m.jd.com/',
+                'sec-fetch-dest': 'document',
+                'sec-fetch-mode': 'navigate',
+                'sec-fetch-site': 'same-site',
+                'sec-fetch-user': '?1',
+                'upgrade-insecure-requests': '1',
+                'User-Agent': self.user_agent
+            }
+            page_resp = self.sess.get(url=page_url, params=page_payload, headers=page_headers)
+            page_html = page_resp.text
+
+            if not page_html:
+                logger.error('商品 %s 预约页面加载失败', sku_id)
+
+            yuyue_url = 'https://wq.jd.com/bases/yuyue/item'
+            yuyue_payload = {
+                'callback': f'subscribeItemCB{self.letterMap[1]}',
+                'dataType': '1',
+                'skuId': sku_id,
+                'sceneval': '2'
+            }
+            yuyue_headers = {
+                'dnt': '1',
+                'referer': 'https://wqs.jd.com/',
+                'sec-fetch-dest': 'script',
+                'sec-fetch-mode': 'no-cors',
+                'sec-fetch-site': 'same-site',
+                # 'sec-fetch-user': '?1',
+                # 'upgrade-insecure-requests': '1',
+                'User-Agent': self.user_agent
+            }
+            yuyue_resp = self.sess.get(url=yuyue_url, params=yuyue_payload, headers=yuyue_headers)
+            yuyue_json = yuyue_resp.text
+            if yuyue_json:
+                if '"replyMsg":"预约成功"' in yuyue_json:
+                    logger.info("商品 %s 预约成功", sku_id)
+                    return True
+                elif 'replyMsg: "您已经成功预约，不需重复预约"' in yuyue_json:
+                    logger.info("商品 %s 已经预约", sku_id)
+                    return True
+            logger.error('响应数据：', yuyue_json)
+        except Exception as e:
+            logger.error(e)
+        logger.error('商品 %s 预约失败，请手动预约', sku_id)
+        return False
 
     @check_login
     def get_user_info(self):
@@ -1591,6 +1660,15 @@ class Assistant(object):
             else:
                 logger.info("商品%s不是 预约抢购商品 或 未开始预约，请重新设置sku_id", sku_id)
                 exit(-1)
+
+        hasYuyue_match = re.search(r'"hasYuyue":"(.*)"', html)
+        if hasYuyue_match:
+            hasYuyue = hasYuyue_match.group(1)
+            if hasYuyue == '0' or hasYuyue == 0:
+                self.new_reserve(sku_id)
+            elif hasYuyue == '1' or hasYuyue == 1:
+                logger.info('商品已预约，跳过自动预约')
+
         return int(time.mktime(server_buy_datetime.timetuple())), (
                 server_buy_datetime + timedelta(milliseconds=-config.buy_time_offset)).strftime(
             "%Y-%m-%d %H:%M:%S.%f")
@@ -2118,8 +2196,6 @@ class Assistant(object):
 
             get_confirm_order_headers = self.headers.copy()
 
-            letterMap = ["Z", "A", "B", "C", "D", "E", "F", "G", "H", "I"]
-
             def parsing_submit_page_data(html):
                 data = dict()
                 page_data = nested_parser('{', '}', html, 'token2')
@@ -2228,7 +2304,7 @@ class Assistant(object):
                             while i < 8:
                                 try:
                                     shipeffect_params = {'reg': 1, 'action': 1, 'reset': 1,
-                                                         'callback': f'preShipeffectCb{letterMap[i + 1]}',
+                                                         'callback': f'preShipeffectCb{self.letterMap[i + 1]}',
                                                          'r': random.random(), 'sceneval': 2,
                                                          'traceid': submit_page_data.get('traceid')}
                                     logger.info('加载订单页参数请求')
@@ -2436,7 +2512,7 @@ class Assistant(object):
             def submit_order_request(submit_data, count):
                 # 新提交订单请求
                 logger.info('提交订单请求')
-                submit_data = f'{submit_data}&r={random.random()}&callback=confirmCb{letterMap[count]}'
+                submit_data = f'{submit_data}&r={random.random()}&callback=confirmCb{self.letterMap[count]}'
                 get_confirm_order_headers['Referer'] = self.get_submit_referer.get(sku_id)
                 try:
                     resp = http_util.send_http_request(self.socket_client,
