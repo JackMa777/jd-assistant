@@ -661,7 +661,7 @@ class Assistant(object):
                 elif 'replyMsg: "您已经成功预约，不需重复预约"' in yuyue_json:
                     logger.info("商品 %s 已经预约", sku_id)
                     return True
-            logger.error('响应数据：', yuyue_json)
+            logger.error('响应数据：%s', yuyue_json)
         except Exception as e:
             logger.error(e)
         logger.error('商品 %s 预约失败，请手动预约', sku_id)
@@ -1660,15 +1660,6 @@ class Assistant(object):
             else:
                 logger.info("商品%s不是 预约抢购商品 或 未开始预约，请重新设置sku_id", sku_id)
                 exit(-1)
-
-        hasYuyue_match = re.search(r'"hasYuyue":"(.*)"', html)
-        if hasYuyue_match:
-            hasYuyue = hasYuyue_match.group(1)
-            if hasYuyue == '0' or hasYuyue == 0:
-                self.new_reserve(sku_id)
-            elif hasYuyue == '1' or hasYuyue == 1:
-                logger.info('商品已预约，跳过自动预约')
-
         return int(time.mktime(server_buy_datetime.timetuple())), (
                 server_buy_datetime + timedelta(milliseconds=-config.buy_time_offset)).strftime(
             "%Y-%m-%d %H:%M:%S.%f")
@@ -2180,6 +2171,17 @@ class Assistant(object):
         # 初始化预约抢购时间
         server_buy_time, realy_buy_time = self.new_init_yuyue_buy_time(sku_id, item_page)
 
+        if server_buy_time > int(time.time()):
+            hasYuyue_match = re.search(r'"hasYuyue":"(.*)"', item_page)
+            if hasYuyue_match:
+                hasYuyue = hasYuyue_match.group(1)
+                if hasYuyue == '0' or hasYuyue == 0:
+                    self.new_reserve(sku_id)
+                elif hasYuyue == '1' or hasYuyue == 1:
+                    logger.info('商品已预约，跳过自动预约')
+        else:
+            logger.info('商品已开售，跳过自动预约')
+
         # 初始化加载订单请求方法
         if fast_mode:
             get_confirm_order_page_request_headers = self.headers.copy()
@@ -2237,9 +2239,12 @@ class Assistant(object):
                 return data
 
             def parse_promise_uuid(resp_text):
-                match = re.search(r'preShipeffectCb[A-Z]\((\{.*\})\)', resp_text)
-                if match:
-                    ship_effect = json.loads(match.group(1))
+                resp_json = nested_parser('{', '}', resp_text, "errId")
+                if isinstance(resp_json, str):
+                    ship_effect = json.loads(resp_json)
+                    promise_uuid = ship_effect['pickshipment']['promiseUuid']
+                elif isinstance(resp_json, list):
+                    ship_effect = json.loads(resp_json[0])
                     promise_uuid = ship_effect['pickshipment']['promiseUuid']
                 else:
                     promise_uuid = ''
@@ -2303,10 +2308,15 @@ class Assistant(object):
                             i = 0
                             while i < 8:
                                 try:
-                                    shipeffect_params = {'reg': 1, 'action': 1, 'reset': 1,
-                                                         'callback': f'preShipeffectCb{self.letterMap[i + 1]}',
-                                                         'r': random.random(), 'sceneval': 2,
-                                                         'traceid': submit_page_data.get('traceid')}
+                                    shipeffect_params = {
+                                        'reg': 1
+                                        , 'action': 1
+                                        , 'reset': 1
+                                        , 'callback': f'preShipeffectCb{self.letterMap[i + 1]}'
+                                        , 'r': random.random()
+                                        , 'sceneval': 2
+                                        , 'traceid': submit_page_data.get('traceid')
+                                    }
                                     logger.info('加载订单页参数请求')
                                     url = 'https://wq.jd.com/deal/mship/shipeffect'
                                     resp = http_util.send_http_request(self.socket_client,
@@ -2317,7 +2327,7 @@ class Assistant(object):
                                                                            'wq.jd.com'),
                                                                        params=shipeffect_params)
                                     promise_uuid = parse_promise_uuid(resp.body)
-                                    if promise_uuid:
+                                    if promise_uuid is not None:
                                         self.get_promiseUuid[sku_id] = promise_uuid
                                         break
                                     # 从响应头中提取cookies并更新
@@ -2326,7 +2336,7 @@ class Assistant(object):
                                 except Exception as e:
                                     logger.error("异常信息：%s", e)
                                 i += 1
-                                logger.info("商品%s第%s次订单页参数请求失败，0.02秒后重试", sku_id, i, promise_uuid_retry_interval)
+                                logger.info("商品%s第%s次订单页参数请求失败，%s秒后重试", sku_id, i, promise_uuid_retry_interval)
                                 time.sleep(promise_uuid_retry_interval)
 
                 submit_data = self.get_submit_data.get(sku_id)
@@ -2355,15 +2365,72 @@ class Assistant(object):
                             # params_list.append(f'&scan_orig={?}')
 
                             # 处理shipment
-                            smallShipments = ["jd311", "jdjzd", "jd411"]
                             shipmentData = None
                             shipName = None
                             shipType = '0'
                             for i, data in enumerate(shipment):
-                                if data.get('type') == shipType:
+                                shipType = data.get('type')
+                                if shipType == '0':
                                     shipmentData = data
-                                    shipName = smallShipments[i]
+                                    shipName = ["jd311", "jdjzd", "jd411"][i]
                                     break
+                                elif shipType == '1' \
+                                        or shipType == '2':
+                                    shipmentData = data
+                                    shipName = "shipsop"
+                                    break
+                                elif shipType == '3' \
+                                        or shipType == '6':
+                                    # var _ = new K.default(e,n,t,h,i);
+                                    # _.supported ? u[_.name] = _ : p[_.name] = _;
+                                    break
+                                elif shipType == '4':
+                                    # "1" == n.selected && "0" == e.jdShipment && (e.isTenVideo = !0,
+                                    # h.isTenVideo = !0,
+                                    # h.fpbarTipLoc = e.isloc,
+                                    # h.fpbarTipTen = !e.isloc);
+                                    break
+                                elif shipType == '5':
+                                    # var g, y, b = !1;
+                                    # if (ce.supSopJd = !0,
+                                    # e.smallProducts.length > 0)
+                                    #     (0,
+                                    #     D.default)(g = oe.smallShipments).call(g, function(a) {
+                                    #         var r = new a(e,n,t,h,i);
+                                    #         r.supported ? u[r.name] = r : p[r.name] = r
+                                    #     });
+                                    # if (e.laProducts.length > 0)
+                                    #     (0,
+                                    #     D.default)(y = oe.largeShipments).call(y, function(a) {
+                                    #         var r = new a(e,n,t,h,i);
+                                    #         r.supported ? (u[r.name] = r,
+                                    #         b = !0) : p[r.name] = r
+                                    #     });
+                                    # if (e.laProducts.length > 0) {
+                                    #     var w = new U.default(e,n,t,h,i);
+                                    #     w.supported && !b ? u[w.name] = w : p[w.name] = w
+                                    # }
+                                    break
+                                elif shipType == '7':
+                                    # if ("1" == n.supported) {
+                                    #     var S = new G.default(e,n,t,h,i);
+                                    #     S.supported ? u[S.name] = S : p[S.name] = S
+                                    # }
+                                    break
+                                elif shipType == '8':
+                                    # var x = new F.default(e,n,t,h,i);
+                                    # x.supported && (u[x.name] = x);
+                                    break
+                                elif shipType == '9':
+                                    # var P = new M.default(e,n,t,h,i);
+                                    # P.supported ? u[P.name] = P : p[P.name] = P;
+                                    break
+                                elif shipType == '10':
+                                    # var j = new H.default(e,n,t,h,i);
+                                    # j.supported ? u[j.name] = j : p[j.name] = j
+                                    break
+                                # else:
+                                #     break
 
                             # if not shipmentData:
                             #     raise AsstException('抢购失败，无法获取订单页收获地址数据，本次抢购结束')
@@ -2433,6 +2500,10 @@ class Assistant(object):
                                     ship_list[2] = '5'
                                     ship_list[7] = '2'
                                     ship_list[11] = shipmentData.get('promiseSendPay')
+                                ship_list[5] = '0'
+                                ship_list[19] = '0'
+                                ship_list[21] = '0'
+                                ship_list[24] = ''
                             elif shipType == '2':
                                 if shipmentData:
                                     ship_list[3] = shipmentData.get('promiseDate')
@@ -2450,7 +2521,24 @@ class Assistant(object):
                                 pass
 
                             elif shipType == '5':
-                                pass
+                                if shipmentData:
+                                    ship_list[3] = shipmentData.get('promiseDate')
+                                    ship_list[4] = shipmentData.get('promiseTimeRange')
+                                    ship_list[5] = shipmentData.get('promiseSendPay')
+                                    ship_list[6] = shipmentData.get('batchId')
+                                else:
+                                    ship_list[3] = ''
+                                    ship_list[4] = ''
+                                    ship_list[5] = ''
+                                    ship_list[6] = ''
+                                ship_list[15] = "1"
+                                if "shipsopjzd" == shipName:
+                                    ship_list[15] = "2"
+                                ship_list[16] = ''# t.calendarTag
+                                # && t.calendarTag.length
+                                # && (0, c.default)(w=t.calendarTag).call(w, function(e){return e.selected}).tagType | | "";
+                                ship_list[13] = '0'
+                                ship_list[19] = ''
 
                             elif shipType == '7':
                                 pass
